@@ -267,9 +267,22 @@ input[type="checkbox"] {
 /* ---- main ---- */
 
 main {
+  position: relative;
   display: grid;
   grid-template-rows: 1fr minmax(220px, 34vh);
   min-height: 0;
+}
+
+body.graph-hidden main {
+  grid-template-rows: 1fr;
+}
+
+body.graph-hidden .roll-pane {
+  display: none;
+}
+
+.muted {
+  color: var(--muted);
 }
 
 .score-pane {
@@ -421,8 +434,9 @@ main {
 
 .countdown {
   position: absolute;
-  top: 30px;
-  right: 16px;
+  top: 18px;
+  right: 34px;
+  z-index: 2;
   font-size: 32px;
   font-weight: 600;
   color: var(--accent);
@@ -494,4 +508,183 @@ dialog small,
   .legend {
     display: none;
   }
+}
+
+/* ---- run toast ---- */
+
+.toast {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 10px 12px 10px 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+}
+
+.toast[hidden] {
+  display: none;
+}
+
+/* ---- pitch trainer ---- */
+
+dialog.trainer {
+  width: min(860px, 94vw);
+}
+
+.trainer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.trainer-head h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.trainer-body {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+#trCanvas {
+  width: 100%;
+  height: 300px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.trainer-readout {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.trainer-readout .big {
+  font-size: 46px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.trainer-readout .state {
+  font-size: 16px;
+  min-height: 1.4em;
+}
+
+.trainer-readout .stats {
+  margin-top: 14px;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trainer-readout .stats b {
+  color: var(--fg);
+}
+
+@media (max-width: 640px) {
+  .trainer-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- history ---- */
+
+dialog.history {
+  width: min(760px, 94vw);
+}
+
+dialog.history h2 {
+  margin-bottom: 2px;
+}
+
+#historyFor {
+  margin: 0 0 12px;
+}
+
+.history-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.history-chart .grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.history-chart .axis {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.history-chart .line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.history-chart .dot {
+  fill: var(--accent);
+}
+
+.history-chart .dot.best {
+  fill: #1f9d55;
+}
+
+#historyBody {
+  max-height: 52vh;
+  overflow: auto;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  padding: 4px 8px 6px 0;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+}
+
+.history-table td {
+  padding: 5px 8px 5px 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.history-table td.score {
+  font-weight: 650;
+}
+
+.history-table small {
+  color: var(--muted);
+}
+
+dialog.history .actions {
+  gap: 8px;
+  margin-top: 12px;
 }

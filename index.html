@@ -24,6 +24,7 @@
           <div class="meter"><div id="level"></div></div>
           <span id="live">—</span>
         </div>
+        <button id="historyBtn" class="btn ghost" title="Scores of your complete run-throughs">History</button>
         <button id="settingsBtn" class="btn ghost" title="Settings">Settings</button>
       </div>
 
@@ -69,6 +70,9 @@
           <label><input id="countIn" type="checkbox" /> Count-in</label>
           <label><input id="reference" type="checkbox" /> Starting note</label>
           <label><input id="metronome" type="checkbox" /> Metronome</label>
+          <label title="More room for the score; the graph comes back when playback ends (G)"
+            ><input id="hideGraph" type="checkbox" /> Hide graph while playing</label
+          >
         </div>
       </div>
     </header>
@@ -97,10 +101,53 @@
         <div class="roll-wrap">
           <canvas id="roll"></canvas>
           <div id="tip" class="tip" hidden></div>
-          <div id="countdown" class="countdown" hidden></div>
         </div>
       </section>
+      <div id="countdown" class="countdown" hidden></div>
+      <div id="toast" class="toast" hidden></div>
     </main>
+
+    <dialog id="trainer" class="trainer">
+      <div class="trainer-head">
+        <div>
+          <h2 id="trTitle"></h2>
+          <span id="trContext" class="muted"></span>
+        </div>
+        <span class="spacer"></span>
+        <button id="trPrev" class="btn ghost" title="Previous note (←)">◀ Previous</button>
+        <button id="trNext" class="btn ghost" title="Next note (→)">Next ▶</button>
+        <button id="trTone" class="btn" title="Play or stop the note (Space)">Play note</button>
+        <button id="trClose" class="btn ghost">Close</button>
+      </div>
+      <div class="trainer-body">
+        <div class="trainer-readout">
+          <div id="trCents" class="big">—</div>
+          <div id="trState" class="state"></div>
+          <div id="trStats" class="stats"></div>
+        </div>
+        <canvas id="trCanvas"></canvas>
+      </div>
+      <p class="note">
+        Sing and hold the note. Keep the line inside the green band (your tolerance). Use headphones if you play the
+        note while singing.
+      </p>
+    </dialog>
+
+    <dialog id="history" class="history">
+      <h2>History</h2>
+      <p id="historyFor" class="muted"></p>
+      <div id="historyBody"></div>
+      <p class="note">
+        A run is recorded when you sing the whole piece to the end with the microphone on. Each note scores up to 100:
+        half for how close its pitch is, 30% for staying within tolerance, 20% for a clean entry. Runs at a different
+        tempo or tolerance are not directly comparable. History is stored in this browser only.
+      </p>
+      <div class="actions">
+        <button id="historyClear" class="btn ghost">Clear history</button>
+        <span class="spacer"></span>
+        <button id="historyClose" class="btn primary">Close</button>
+      </div>
+    </dialog>
 
     <dialog id="settings">
       <form method="dialog">

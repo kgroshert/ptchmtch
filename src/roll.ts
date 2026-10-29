@@ -24,6 +24,7 @@ export class PitchRoll {
   /** Keep the playhead in view while playing. */
   follow = true;
   onRangeSelect: (fromMeasure: number, toMeasure: number) => void = () => {};
+  onNoteDblClick: (ev: NoteEvent) => void = () => {};
 
   private ctx: CanvasRenderingContext2D;
   private w = 0;
@@ -46,6 +47,13 @@ export class PitchRoll {
       this.tip.hidden = true;
     });
     canvas.addEventListener("wheel", (e) => this.wheel(e), { passive: false });
+    canvas.addEventListener("dblclick", (e) => {
+      const { x, y } = this.local(e);
+      if (y < RULER || x < GUTTER) return;
+      const beat = this.xToBeat(x);
+      const ev = this.model?.track?.events.find((n) => n.start <= beat && n.end > beat);
+      if (ev) this.onNoteDblClick(ev);
+    });
   }
 
   get visibleBeats(): number {

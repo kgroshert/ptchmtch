@@ -1,8 +1,10 @@
-import { evaluate, statusColor, summarize, type NoteResult, type Settings, type TakeSample } from "./analysis";
+import { evaluate, runScore, statusColor, summarize, type NoteResult, type Settings, type TakeSample } from "./analysis";
+import { addRun, clearRuns, loadRuns, renderHistory, type Run } from "./history";
 import { midiName, PitchTracker, type PitchSample } from "./pitch";
 import { Player } from "./player";
 import { PitchRoll } from "./roll";
 import { Score, type NoteEvent, type Track } from "./score";
+import { PitchTrainer } from "./trainer";
 
 type Mode = "lead" | "normal" | "mute";
 
@@ -14,6 +16,7 @@ interface Prefs {
   countIn: boolean;
   reference: boolean;
   metronome: boolean;
+  hideGraph: boolean;
   toleranceCents: number;
   octaveFree: boolean;
   onsetMs: number;
@@ -27,10 +30,11 @@ const DEFAULTS: Prefs = {
   mode: "normal",
   others: 60,
   speed: 100,
-  loop: true,
+  loop: false,
   countIn: true,
   reference: true,
   metronome: false,
+  hideGraph: false,
   toleranceCents: 25,
   octaveFree: false,
   onsetMs: 100,
@@ -40,7 +44,8 @@ const DEFAULTS: Prefs = {
 
 function loadPrefs(): Prefs {
   try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem("ptchmtch.prefs") || "{}") };
+    // Looping always starts off; it is a per-session choice.
+    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem("ptchmtch.prefs") || "{}"), loop: false };
   } catch {
     return { ...DEFAULTS };
   }
@@ -49,7 +54,8 @@ function loadPrefs(): Prefs {
 const prefs = loadPrefs();
 function savePrefs(): void {
   try {
-    localStorage.setItem("ptchmtch.prefs", JSON.stringify(prefs));
+    const { loop, ...kept } = prefs;
+    localStorage.setItem("ptchmtch.prefs", JSON.stringify(kept));
   } catch {
     /* storage unavailable */
   }
@@ -62,6 +68,9 @@ const score = new Score($("score"));
 const roll = new PitchRoll($<HTMLCanvasElement>("roll"), $("tip"));
 let player: Player | null = null;
 let tracker: PitchTracker | null = null;
+const trainer = new PitchTrainer($<HTMLDialogElement>("trainer"));
+let stopTone: (() => void) | null = null;
+let trainerEvent: NoteEvent | null = null;
 
 let loaded = false;
 let track: Track | null = null;
@@ -72,6 +81,8 @@ let previous: TakeSample[] = [];
 let samplePass = -1;
 let pending: NoteEvent[] = [];
 let pendingIdx = 0;
+/** Results scored during the current pass only, for recording a run. */
+let passResults = new Map<number, NoteResult>();
 let playhead: number | null = null;
 
 const settings = (): Settings => ({
@@ -237,6 +248,8 @@ async function play(): Promise<void> {
   samplePass = -1;
   pending = track.events.filter((ev) => ev.start >= start - 1e-6 && ev.end <= end + 1e-6);
   pendingIdx = 0;
+  passResults = new Map();
+  hideToast();
   const first = track.events.find((ev) => ev.end > start);
   roll.follow = true;
   roll.reveal(start);
@@ -251,15 +264,19 @@ async function play(): Promise<void> {
     metronome: prefs.metronome,
   });
   setPlayingUI(true);
+  document.body.classList.toggle("graph-hidden", prefs.hideGraph);
   requestAnimationFrame(frame);
 }
 
-function stop(): void {
+/** `completed` = the piece (or selection) played to its end rather than being stopped. */
+function stop(completed = false): void {
   if (!player?.playing) return;
   player.stop();
   finishPass(Infinity);
+  if (completed) recordRun();
   playhead = null;
   setPlayingUI(false);
+  document.body.classList.remove("graph-hidden");
   $("countdown").hidden = true;
   refresh();
 }
@@ -275,7 +292,7 @@ function frame(): void {
   const pos = p.positionAt(p.ctx.currentTime - p.outputLatency);
   const cd = $("countdown");
   if (pos.kind === "ended") {
-    stop();
+    stop(true);
     return;
   }
   if (pos.kind === "countIn") {
@@ -296,6 +313,7 @@ function frame(): void {
 function onSample(s: PitchSample): void {
   $("level").style.width = `${Math.min(100, s.level * 400)}%`;
   showLive(s.midi);
+  trainer.push(s);
 
   const p = player;
   if (!p?.playing) return;
@@ -305,6 +323,8 @@ function onSample(s: PitchSample): void {
   if (pos.pass !== samplePass) {
     if (samplePass >= 0) {
       finishPass(Infinity);
+      recordRun();
+      passResults = new Map();
       previous = current;
       current = [];
     }
@@ -328,6 +348,7 @@ function finishPass(beat: number): void {
     const ev = pending[pendingIdx++];
     const r = evaluate(ev, current, settings());
     results.set(ev.id, r);
+    passResults.set(ev.id, r);
     score.colorEvent(ev, statusColor(r.status));
     changed = true;
   }
@@ -365,6 +386,105 @@ async function toggleMic(): Promise<void> {
     alert(`Microphone unavailable: ${(err as Error).message ?? err}`);
   }
 }
+
+// --- run history ----------------------------------------------------------
+
+/** Stores the pass that just ended if it covered the whole piece and was actually sung. */
+function recordRun(): void {
+  if (!track || !tracker?.active) return;
+  if (range.from !== 0 || range.to !== score.measures.length - 1) return;
+  const rs = track.events.map((ev) => passResults.get(ev.id)).filter((r): r is NoteResult => !!r);
+  const s = summarize(rs);
+  if (s.sung < track.events.length * 0.3) return; // not really a run-through
+  const before = loadRuns(score.fingerprint, track.key);
+  const run: Run = {
+    date: Date.now(),
+    score: runScore(track.events, passResults),
+    notes: track.events.length,
+    sung: s.sung,
+    good: s.good,
+    meanAbsCents: s.meanAbsCents,
+    meanCents: s.meanCents,
+    cleanRate: s.onsets ? s.clean / s.onsets : null,
+    speed: prefs.speed,
+    toleranceCents: prefs.toleranceCents,
+  };
+  addRun(score.fingerprint, track.key, run);
+  const prev = before[before.length - 1];
+  const best = Math.max(...before.map((r) => r.score));
+  let cmp = "first recorded run";
+  if (prev) {
+    const d = Math.round(run.score) - Math.round(prev.score);
+    cmp = `${d > 0 ? "+" : ""}${d} vs. last run`;
+    if (run.score > best) cmp += " · new best";
+  }
+  showToast(`Run complete: score <b>${Math.round(run.score)}</b> (${cmp})`);
+}
+
+let toastTimer = 0;
+function showToast(html: string): void {
+  const t = $("toast");
+  t.innerHTML = `${html} <button class="btn ghost small" id="toastHistory">View history</button>`;
+  t.hidden = false;
+  $("toastHistory").addEventListener("click", openHistory);
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(hideToast, 15000);
+}
+
+function hideToast(): void {
+  $("toast").hidden = true;
+}
+
+function openHistory(): void {
+  hideToast();
+  const dlg = $<HTMLDialogElement>("history");
+  if (!loaded || !track) {
+    $("historyFor").textContent = "Open a score first.";
+    $("historyBody").innerHTML = "";
+  } else {
+    $("historyFor").textContent = `${track.label} · ${score.title}`;
+    renderHistory($("historyBody"), loadRuns(score.fingerprint, track.key));
+  }
+  if (!dlg.open) dlg.showModal();
+}
+
+// --- pitch trainer --------------------------------------------------------
+
+async function openTrainer(ev: NoteEvent): Promise<void> {
+  stop();
+  trainerEvent = ev;
+  if (!tracker?.active) await toggleMic();
+  trainer.open({ midi: ev.midi, context: trainerContext(ev) }, settings());
+}
+
+function trainerContext(ev: NoteEvent): string {
+  const t = score.trackOf(ev);
+  return `${t?.label ?? ""} · bar ${score.measures[ev.measureIndex]?.number ?? ""}`;
+}
+
+function stepTrainer(dir: 1 | -1): void {
+  if (!trainerEvent) return;
+  const events = score.trackOf(trainerEvent)?.events ?? [];
+  const next = events[events.indexOf(trainerEvent) + dir];
+  if (!next) return;
+  trainerEvent = next;
+  trainer.setTarget({ midi: next.midi, context: trainerContext(next) });
+}
+
+trainer.onPrev = () => stepTrainer(-1);
+trainer.onNext = () => stepTrainer(1);
+trainer.onTone = (on) => {
+  stopTone?.();
+  stopTone = null;
+  const midi = trainer.midi;
+  if (on && midi !== null) stopTone = getPlayer().sustain(midi);
+};
+
+scorePane.addEventListener("dblclick", (e) => {
+  const ev = score.eventAtElement(e.target as Element);
+  if (ev) void openTrainer(ev);
+});
+roll.onNoteDblClick = (ev) => void openTrainer(ev);
 
 // --- display --------------------------------------------------------------
 
@@ -490,7 +610,7 @@ function bindControls(): void {
   });
   showSpeed();
 
-  for (const key of ["loop", "countIn", "reference", "metronome"] as const) {
+  for (const key of ["loop", "countIn", "reference", "metronome", "hideGraph"] as const) {
     const box = $<HTMLInputElement>(key);
     box.checked = prefs[key];
     box.addEventListener("change", () => {
@@ -510,6 +630,14 @@ function bindControls(): void {
     setRange(Math.min(range.from, b), b);
   });
   $("all").addEventListener("click", () => setRange(0, score.measures.length - 1));
+
+  $("historyBtn").addEventListener("click", openHistory);
+  $("historyClose").addEventListener("click", () => $<HTMLDialogElement>("history").close());
+  $("historyClear").addEventListener("click", () => {
+    if (!track || !confirm(`Delete all recorded runs of ${track.label}?`)) return;
+    clearRuns(score.fingerprint, track.key);
+    openHistory();
+  });
 
   $("zoomIn").addEventListener("click", () => roll.zoom(1.25));
   $("zoomOut").addEventListener("click", () => roll.zoom(0.8));
@@ -568,6 +696,11 @@ function bindControls(): void {
       box.dispatchEvent(new Event("change"));
     } else if (e.key === "m" || e.key === "M") {
       void toggleMic();
+    } else if (e.key === "g" || e.key === "G") {
+      const box = $<HTMLInputElement>("hideGraph");
+      box.checked = !box.checked;
+      box.dispatchEvent(new Event("change"));
+      if (player?.playing) document.body.classList.toggle("graph-hidden", box.checked);
     }
   });
 

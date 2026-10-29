@@ -48,9 +48,12 @@ export class Score {
   tracks: Track[] = [];
   measures: Measure[] = [];
   totalBeats = 0;
+  /** Identifies the piece by its notes, independent of file name or format. */
+  fingerprint = "";
 
   private cursorBeats: number[] = [];
   private cursorIndex = 0;
+  private elementEvents = new WeakMap<Element, NoteEvent>();
 
   constructor(private container: HTMLElement) {
     this.osmd = new OpenSheetMusicDisplay(container, {
@@ -69,6 +72,7 @@ export class Score {
     this.title = this.osmd.Sheet.TitleString || "Untitled";
     this.extractMeasures();
     this.extractTracks();
+    this.fingerprint = fingerprint(this.title, this.tracks);
     this.render();
   }
 
@@ -85,6 +89,23 @@ export class Score {
     }
     this.osmd.cursor.reset();
     this.cursorIndex = 0;
+
+    this.elementEvents = new WeakMap();
+    for (const t of this.tracks)
+      for (const ev of t.events) for (const el of this.noteElements(ev)) this.elementEvents.set(el, ev);
+  }
+
+  /** The note event drawn at (or containing) a clicked SVG element. */
+  eventAtElement(el: Element | null): NoteEvent | null {
+    for (let e = el; e && e !== this.container; e = e.parentElement) {
+      const ev = this.elementEvents.get(e);
+      if (ev) return ev;
+    }
+    return null;
+  }
+
+  trackOf(ev: NoteEvent): Track | undefined {
+    return this.tracks.find((t) => t.key === ev.trackKey);
   }
 
   // --- time ---------------------------------------------------------------
@@ -159,11 +180,18 @@ export class Score {
   }
 
   /** Colours the noteheads of an event; null restores the engraved colour. */
-  colorEvent(ev: NoteEvent, color: string | null): void {
+  private noteElements(ev: NoteEvent): SVGGElement[] {
+    const els: SVGGElement[] = [];
     for (const note of ev.notes) {
       const g = this.osmd.EngravingRules.GNote(note) as unknown as { getSVGGElement?: () => SVGGElement } | undefined;
       const el = g?.getSVGGElement?.();
-      if (!el) continue;
+      if (el) els.push(el);
+    }
+    return els;
+  }
+
+  colorEvent(ev: NoteEvent, color: string | null): void {
+    for (const el of this.noteElements(ev)) {
       const heads = el.querySelectorAll<SVGElement>(".vf-notehead path, .vf-notehead");
       const targets = heads.length ? heads : el.querySelectorAll<SVGElement>("path");
       targets.forEach((p) => {
@@ -281,4 +309,15 @@ export class Score {
     });
     this.tracks = tracks;
   }
+}
+
+function fingerprint(title: string, tracks: Track[]): string {
+  // FNV-1a over the title and every note, so a re-exported file of the same piece keeps its history.
+  let h = 0x811c9dc5;
+  const add = (str: string) => {
+    for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 0x01000193);
+  };
+  add(title);
+  for (const t of tracks) for (const ev of t.events) add(`${t.key}|${ev.midi}|${ev.start}|${ev.end};`);
+  return (h >>> 0).toString(36);
 }

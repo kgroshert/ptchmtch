@@ -158,3 +158,20 @@ export function summarize(results: NoteResult[]): Summary {
     meanCents: sung.reduce((a, r) => a + r.cents, 0) / n,
   };
 }
+
+/**
+ * 0–100 for one note: half for how close the median pitch is (0¢ → full, 100¢ → none),
+ * 30% for how steadily it stayed within tolerance, 20% for a clean entry.
+ */
+export function noteScore(r: NoteResult | undefined): number {
+  if (!r || r.status === "missed") return 0;
+  const accuracy = Math.max(0, 1 - Math.abs(r.cents) / 100);
+  const entry = r.onset ? { clean: 1, scoop: 0.5, fall: 0.5, unsettled: 0 }[r.onset.kind] : 1;
+  return 100 * (0.5 * accuracy + 0.3 * r.inTune + 0.2 * entry);
+}
+
+/** Score for a whole run: the mean note score, with unsung notes counting as 0. */
+export function runScore(events: NoteEvent[], results: Map<number, NoteResult>): number {
+  if (!events.length) return 0;
+  return events.reduce((a, ev) => a + noteScore(results.get(ev.id)), 0) / events.length;
+}

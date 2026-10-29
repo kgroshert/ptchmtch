@@ -188,6 +188,18 @@ export class Player {
     }
   }
 
+  /** Starts a steady reference tone; call the returned function to stop it. */
+  sustain(midi: number): () => void {
+    void this.ctx.resume();
+    const bus = this.ctx.createGain();
+    bus.connect(this.out);
+    this.tone(midi, this.ctx.currentTime + 0.02, 3600, bus, 0.2);
+    return () => {
+      bus.gain.setTargetAtTime(0, this.ctx.currentTime, 0.03);
+      setTimeout(() => bus.disconnect(), 200);
+    };
+  }
+
   private tone(midi: number, at: number, dur: number, dest: AudioNode, vel: number): void {
     const ctx = this.ctx;
     const f = 440 * 2 ** ((midi - 69) / 12);
