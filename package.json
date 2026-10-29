@@ -1,0 +1,21 @@
+{
+  "name": "ptchmtch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sing along with a MusicXML score and see how close your pitch was",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "sample": "node scripts/make-sample.mjs"
+  },
+  "dependencies": {
+    "opensheetmusicdisplay": "^2.2.1",
+    "pitchy": "^4.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  }
+}

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ptchmtch</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="row">
+        <span class="brand">ptchmtch</span>
+        <label class="btn">
+          Open score…
+          <input id="file" type="file" accept=".xml,.musicxml,.mxl" hidden />
+        </label>
+        <button id="sample" class="btn ghost">Load sample</button>
+        <span id="title" class="title"></span>
+        <span class="spacer"></span>
+        <button id="mic" class="btn" title="Microphone on/off (M)">
+          <span class="dot"></span> Microphone
+        </button>
+        <div class="readout" title="Pitch you are singing right now">
+          <div class="meter"><div id="level"></div></div>
+          <span id="live">—</span>
+        </div>
+        <button id="settingsBtn" class="btn ghost" title="Settings">Settings</button>
+      </div>
+
+      <div class="row controls" id="controls">
+        <button id="play" class="btn primary play" title="Play / stop (Space)">Play</button>
+
+        <div class="field">
+          <label for="voice">Your part</label>
+          <select id="voice"></select>
+        </div>
+
+        <div class="field">
+          <label>Your part in playback</label>
+          <div class="seg" id="mode">
+            <button data-mode="lead">Loud</button>
+            <button data-mode="normal">Normal</button>
+            <button data-mode="mute">Muted</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="others">Other parts <output id="othersOut"></output></label>
+          <input id="others" type="range" min="0" max="100" step="5" />
+        </div>
+
+        <div class="field">
+          <label for="speed">Tempo <output id="speedOut"></output></label>
+          <input id="speed" type="range" min="40" max="130" step="5" />
+        </div>
+
+        <div class="field">
+          <label>Bars</label>
+          <div class="range-inputs">
+            <input id="from" type="number" min="1" />
+            <span>–</span>
+            <input id="to" type="number" min="1" />
+            <button id="all" class="btn ghost small" title="Select the whole piece">All</button>
+          </div>
+        </div>
+
+        <div class="checks">
+          <label><input id="loop" type="checkbox" /> Loop</label>
+          <label><input id="countIn" type="checkbox" /> Count-in</label>
+          <label><input id="reference" type="checkbox" /> Starting note</label>
+          <label><input id="metronome" type="checkbox" /> Metronome</label>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section id="scorePane" class="score-pane">
+        <div id="score"></div>
+        <div id="overlay"></div>
+        <div id="empty" class="empty">
+          <p>Open a MusicXML file (<code>.musicxml</code>, <code>.xml</code> or <code>.mxl</code>) or drop it here.</p>
+          <p class="hint">Click a bar to practise it, shift-click to extend the selection.</p>
+        </div>
+      </section>
+
+      <section class="roll-pane">
+        <div class="roll-head">
+          <span id="summary" class="summary">Sing along with the microphone on to see your pitch here.</span>
+          <span class="legend">
+            <i class="sw good"></i>within tolerance <i class="sw close"></i>close <i class="sw off"></i>off
+            <i class="sw prev"></i>previous take
+          </span>
+          <span class="spacer"></span>
+          <button id="zoomOut" class="btn ghost small" title="Zoom out">−</button>
+          <button id="zoomIn" class="btn ghost small" title="Zoom in">+</button>
+        </div>
+        <div class="roll-wrap">
+          <canvas id="roll"></canvas>
+          <div id="tip" class="tip" hidden></div>
+          <div id="countdown" class="countdown" hidden></div>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="settings">
+      <form method="dialog">
+        <h2>Settings</h2>
+        <label class="stack">
+          Microphone
+          <select id="device"><option value="">Default input</option></select>
+        </label>
+        <label class="stack">
+          Tolerance
+          <select id="tolerance">
+            <option value="10">±10 cents (strict)</option>
+            <option value="25">±25 cents</option>
+            <option value="35">±35 cents</option>
+            <option value="50">±50 cents (lenient)</option>
+          </select>
+        </label>
+        <label class="inline">
+          <input id="octaveFree" type="checkbox" />
+          Ignore octave (sing a part in your own range)
+        </label>
+        <label class="stack">
+          Latency correction <output id="latencyOut"></output>
+          <input id="latency" type="range" min="-150" max="300" step="5" />
+          <small id="latencyInfo"></small>
+        </label>
+        <p class="note">
+          Use headphones: with speakers, the microphone also hears the playback, and the accompaniment
+          can be mistaken for your voice.
+        </p>
+        <div class="actions"><button class="btn primary" value="close">Done</button></div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
