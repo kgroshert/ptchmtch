@@ -73,10 +73,21 @@ Above the graph, two lines summarise the selected bars. The first covers pitch: 
 - **Tolerance**: ±10 to ±50 cents.
 - **Clean onset**: how quickly a note must be on pitch to count as hit cleanly (60–250 ms).
 - **Ignore octave**: counts singing in another octave as correct, e.g. a tenor part sung an octave up.
-- **Latency correction**: if your line always looks a little late (or early) compared to the notes, adjust this.
+- **Latency correction**: lines up your pitch line with the notes. Use **Calibrate…** to measure it (see below), or adjust it by hand if your line always looks a little late or early.
 - **Microphone**: choose the input device.
 
 Use headphones. With speakers, the microphone also picks up the playback.
+
+### Latency calibration
+
+Between a note being played and your voice reaching the app there are several delays: the headphones (often 150–250 ms with Bluetooth), your own timing, and the microphone. **Settings → Calibrate…** measures them all together:
+
+1. You hear four clicks, then 16 short notes.
+2. Say a short **"ba"** on each note, at any pitch, as you would when singing along.
+3. The app finds the start of each "ba" in the raw microphone signal (to about 1 ms), ignores the first two, and takes the median delay.
+4. It shows the result and how consistent you were. **Apply** sets the latency correction.
+
+Calibrate again whenever you change headphones or microphone.
 
 ## How it works
 
@@ -88,6 +99,7 @@ Use headphones. With speakers, the microphone also picks up the playback.
 | `src/analysis.ts` | Scores each note: median deviation in cents, share of the note in tune, coverage, and how the note was entered (clean, slide, unsettled). |
 | `src/roll.ts` | The pitch graph (canvas). |
 | `src/trainer.ts` | Single-note pitch trainer. |
+| `src/calibration.ts` | Latency calibration: plays the beats, detects syllable onsets, computes the correction. |
 | `src/history.ts` | Stores runs in local storage and draws the history chart and table. |
 | `src/main.ts` | UI wiring and state. |
 

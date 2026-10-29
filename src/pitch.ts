@@ -16,6 +16,11 @@ const MAX_HZ = 1400;
 /** Tracks the singer's pitch from the microphone using the McLeod pitch method. */
 export class PitchTracker {
   onSample: (s: PitchSample) => void = () => {};
+  /**
+   * Receives the raw analysis window on every poll, with the AudioContext time of its last sample.
+   * The buffer is reused, so read it synchronously.
+   */
+  onBuffer: ((buf: Float32Array, endTime: number) => void) | null = null;
   /** Minimum clarity (0..1) for a pitch to be accepted. */
   clarity = 0.88;
   /** RMS below this counts as silence. */
@@ -75,6 +80,7 @@ export class PitchTracker {
     const sr = this.ctx.sampleRate;
     const time = this.ctx.currentTime - WINDOW / sr / 2;
     this.analyser.getFloatTimeDomainData(this.buf);
+    this.onBuffer?.(this.buf, this.ctx.currentTime);
     let sum = 0;
     for (let i = 0; i < this.buf.length; i++) sum += this.buf[i] * this.buf[i];
     const level = Math.sqrt(sum / this.buf.length);

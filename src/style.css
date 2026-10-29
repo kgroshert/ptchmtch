@@ -688,3 +688,35 @@ dialog.history .actions {
   gap: 8px;
   margin-top: 12px;
 }
+
+/* ---- calibration ---- */
+
+dialog.calibration {
+  width: min(560px, 94vw);
+}
+
+dialog.calibration p {
+  margin: 0 0 12px;
+  line-height: 1.45;
+}
+
+#calCanvas {
+  display: block;
+  width: 100%;
+  height: 150px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+
+.cal-status {
+  min-height: 3em;
+}
+
+dialog.calibration .actions {
+  gap: 8px;
+}
+
+.calibrate {
+  justify-self: start;
+}

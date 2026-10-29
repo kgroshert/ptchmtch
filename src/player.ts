@@ -188,6 +188,29 @@ export class Player {
     }
   }
 
+  /**
+   * Plays `countIn` clicks, then `beats` short notes with clicks, at `bpm`.
+   * Returns the scheduled times of the notes, for latency calibration.
+   */
+  async playCalibration(midi: number, bpm: number, countIn: number, beats: number): Promise<number[]> {
+    this.stop();
+    await this.ctx.resume();
+    this.bus = this.ctx.createGain();
+    this.bus.connect(this.out);
+    const beat = 60 / bpm;
+    const start = this.ctx.currentTime + 0.3;
+    const targets: number[] = [];
+    for (let i = 0; i < countIn + beats; i++) {
+      const t = start + i * beat;
+      this.click(t, i % 4 === 0);
+      if (i >= countIn) {
+        this.tone(midi, t, beat * 0.4, this.bus, 0.2);
+        targets.push(t);
+      }
+    }
+    return targets;
+  }
+
   /** Starts a steady reference tone; call the returned function to stop it. */
   sustain(midi: number): () => void {
     void this.ctx.resume();

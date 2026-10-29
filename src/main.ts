@@ -1,3 +1,4 @@
+import { Calibration } from "./calibration";
 import { evaluate, runScore, statusColor, summarize, type NoteResult, type Settings, type TakeSample } from "./analysis";
 import { addRun, clearRuns, loadRuns, renderHistory, type Run } from "./history";
 import { midiName, PitchTracker, type PitchSample } from "./pitch";
@@ -366,6 +367,12 @@ function showLive(midi: number | null): void {
   if (t !== liveText) $("live").textContent = liveText = t;
 }
 
+/** Turns the microphone on if it isn't already; null if that failed. */
+async function ensureMic(): Promise<PitchTracker | null> {
+  if (!tracker?.active) await toggleMic();
+  return tracker?.active ? tracker : null;
+}
+
 async function toggleMic(): Promise<void> {
   const btn = $("mic");
   if (tracker?.active) {
@@ -453,7 +460,7 @@ function openHistory(): void {
 async function openTrainer(ev: NoteEvent): Promise<void> {
   stop();
   trainerEvent = ev;
-  if (!tracker?.active) await toggleMic();
+  await ensureMic();
   trainer.open({ midi: ev.midi, context: trainerContext(ev) }, settings());
 }
 
@@ -677,6 +684,11 @@ function bindControls(): void {
     showLatency();
     savePrefs();
   });
+  $("calibrateBtn").addEventListener("click", () => {
+    stop();
+    dlg.close();
+    calibration.open();
+  });
   $<HTMLSelectElement>("device").addEventListener("change", async (e) => {
     prefs.deviceId = (e.target as HTMLSelectElement).value;
     savePrefs();
@@ -717,11 +729,27 @@ function bindControls(): void {
   });
 }
 
+const reportedLatencyMs = () => ((player?.outputLatency ?? 0) + (tracker?.inputLatency ?? 0)) * 1000;
+
+const calibration = new Calibration($<HTMLDialogElement>("calibration"), {
+  player: getPlayer,
+  mic: ensureMic,
+  // Middle of the selected part, so the notes sit in the singer's range.
+  midi: () => (track ? Math.round((track.minMidi + track.maxMidi) / 2) : 60),
+  reportedMs: reportedLatencyMs,
+  apply: (ms) => {
+    prefs.latencyMs = ms;
+    $<HTMLInputElement>("latency").value = String(ms);
+    savePrefs();
+    showLatency();
+  },
+});
+
 function showLatency(): void {
-  const auto = Math.round(((player?.outputLatency ?? 0) + (tracker?.inputLatency ?? 0)) * 1000);
+  const auto = Math.round(reportedLatencyMs());
   $("latencyOut").textContent = `${prefs.latencyMs >= 0 ? "+" : ""}${prefs.latencyMs} ms`;
   $("latencyInfo").textContent =
-    `Added to the ${auto} ms the browser reports. Increase it if your line consistently looks late compared to the notes.`;
+    `Added to the ${auto} ms the browser reports. Use Calibrate to measure it, or increase it if your line consistently looks late compared to the notes.`;
 }
 
 /** Re-scores the latest take after tolerance or octave settings change. */
@@ -757,4 +785,4 @@ bindControls();
 refresh();
 updateSummary();
 
-if (import.meta.env.DEV) Object.assign(window, { __app: { score, roll, get player() { return player; } } });
+if (import.meta.env.DEV) Object.assign(window, { __app: { score, roll, calibration, get player() { return player; } } });
