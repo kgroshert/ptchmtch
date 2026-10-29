@@ -344,9 +344,17 @@ main {
 .summary {
   font-variant-numeric: tabular-nums;
   min-width: 0;
+  line-height: 1.45;
+}
+
+.summary > div {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.summary > div + div {
+  color: var(--muted);
 }
 
 .roll-head .btn {

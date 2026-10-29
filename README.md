@@ -32,11 +32,22 @@ The bars are the written notes of your part, and the shaded band around each bar
 - red: further off
 - grey: the previous pass of a loop, for comparison
 
-Once a note has been sung, it is marked with its median deviation (e.g. `−12¢`) and its notehead in the score takes the same colour. Hover over a note to see details. The line above the graph summarises the selected bars, including whether you tend to sing sharp or flat.
+Once a note has been sung, it is marked with its median deviation (e.g. `−12¢`) and its notehead in the score takes the same colour. Hover over a note to see details.
+
+The pitch score of a note ignores its first moments, so how you *enter* a note is measured separately:
+
+- **Clean**: on pitch straight away. The note's pitch holds within tolerance within the onset window (100 ms by default).
+- **Slid up from below / came down from above**: it took longer than the onset window to reach the pitch. A small amber ramp marks these notes in the graph.
+- **Never settled**: the pitch never held steady within tolerance.
+
+Hover over a note to see its deviation, where it started (e.g. `started at −140¢`) and how long it took to reach the pitch.
+
+Above the graph, two lines summarise the selected bars. The first covers pitch: notes within tolerance, mean deviation, and whether you tend to sing sharp or flat. The second covers onsets: the share of notes hit cleanly, the number of slides from below and from above, and how long slides take to settle on average.
 
 ### Settings
 
 - **Tolerance**: ±10 to ±50 cents.
+- **Clean onset**: how quickly a note must be on pitch to count as hit cleanly (60–250 ms).
 - **Ignore octave**: counts singing in another octave as correct, e.g. a tenor part sung an octave up.
 - **Latency correction**: if your line always looks a little late (or early) compared to the notes, adjust this.
 - **Microphone**: choose the input device.
@@ -50,7 +61,7 @@ Use headphones. With speakers, the microphone also picks up the playback.
 | `src/score.ts` | Renders the score with [OpenSheetMusicDisplay](https://opensheetmusicdisplay.org/) and reads parts, voices, notes (ties merged), bars and tempo from its model. Also handles the cursor, bar geometry and notehead colouring. |
 | `src/player.ts` | Web Audio scheduler and a simple built-in synth. Handles per-part volume, count-in, metronome and looping. Maps audio time to score position. |
 | `src/pitch.ts` | Microphone input with the McLeod pitch method ([pitchy](https://github.com/ianprime0509/pitchy)), with browser voice processing turned off. |
-| `src/analysis.ts` | Scores each note: median deviation in cents, share of the note in tune, coverage. |
+| `src/analysis.ts` | Scores each note: median deviation in cents, share of the note in tune, coverage, and how the note was entered (clean, slide, unsettled). |
 | `src/roll.ts` | The pitch graph (canvas). |
 | `src/main.ts` | UI wiring and state. |
 

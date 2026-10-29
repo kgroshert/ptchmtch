@@ -118,6 +118,16 @@
             <option value="50">±50 cents (lenient)</option>
           </select>
         </label>
+        <label class="stack">
+          Clean onset: on pitch within
+          <select id="onsetMs">
+            <option value="60">60 ms (strict)</option>
+            <option value="100">100 ms</option>
+            <option value="150">150 ms</option>
+            <option value="250">250 ms (lenient)</option>
+          </select>
+          <small>A note that takes longer to settle is counted as a slide (from below or above).</small>
+        </label>
         <label class="inline">
           <input id="octaveFree" type="checkbox" />
           Ignore octave (sing a part in your own range)

@@ -16,6 +16,7 @@ interface Prefs {
   metronome: boolean;
   toleranceCents: number;
   octaveFree: boolean;
+  onsetMs: number;
   latencyMs: number;
   deviceId: string;
 }
@@ -32,6 +33,7 @@ const DEFAULTS: Prefs = {
   metronome: false,
   toleranceCents: 25,
   octaveFree: false,
+  onsetMs: 100,
   latencyMs: 0,
   deviceId: "",
 };
@@ -72,7 +74,11 @@ let pending: NoteEvent[] = [];
 let pendingIdx = 0;
 let playhead: number | null = null;
 
-const settings = (): Settings => ({ toleranceCents: prefs.toleranceCents, octaveFree: prefs.octaveFree });
+const settings = (): Settings => ({
+  toleranceCents: prefs.toleranceCents,
+  octaveFree: prefs.octaveFree,
+  onsetMs: prefs.onsetMs,
+});
 
 function getPlayer(): Player {
   player ??= new Player(score);
@@ -293,7 +299,8 @@ function onSample(s: PitchSample): void {
 
   const p = player;
   if (!p?.playing) return;
-  const pos = p.positionAt(s.time - latency());
+  const time = s.time - latency();
+  const pos = p.positionAt(time);
   if (pos.kind !== "playing") return;
   if (pos.pass !== samplePass) {
     if (samplePass >= 0) {
@@ -303,7 +310,7 @@ function onSample(s: PitchSample): void {
     }
     samplePass = pos.pass;
   }
-  current.push({ beat: pos.beat, midi: s.midi });
+  current.push({ beat: pos.beat, time, midi: s.midi });
   finishPass(pos.beat);
 }
 
@@ -314,9 +321,10 @@ function finishPass(beat: number): void {
     return;
   }
   const lastBeat = current[current.length - 1].beat;
-  const upTo = Math.min(beat, lastBeat);
+  // While running, wait until a note is over; when the pass ends, score whatever was reached.
+  const done = (ev: NoteEvent) => (beat === Infinity ? ev.start < lastBeat : ev.end + 0.05 <= Math.min(beat, lastBeat));
   let changed = false;
-  while (pendingIdx < pending.length && pending[pendingIdx].end + 0.05 <= upTo) {
+  while (pendingIdx < pending.length && done(pending[pendingIdx])) {
     const ev = pending[pendingIdx++];
     const r = evaluate(ev, current, settings());
     results.set(ev.id, r);
@@ -380,6 +388,7 @@ function updateSummary(): void {
   const inRange = track.events.filter((ev) => ev.start >= start && ev.end <= end);
   const rs = inRange.map((ev) => results.get(ev.id)).filter((r): r is NoteResult => !!r);
   if (!rs.length) {
+    el.innerHTML = "";
     el.textContent = tracker?.active
       ? "Press Play and sing your part."
       : "Turn on the microphone and press Play to see your pitch here.";
@@ -392,7 +401,24 @@ function updateSummary(): void {
       : `Bars ${score.measures[range.from].number}–${score.measures[range.to].number}`;
   const tend =
     Math.abs(s.meanCents) < 5 ? "centred" : `${Math.round(Math.abs(s.meanCents))}¢ ${s.meanCents > 0 ? "sharp" : "flat"} on average`;
-  el.textContent = `${bars}: ${s.good}/${s.notes} notes within ±${prefs.toleranceCents}¢ · ${s.sung} sung · mean deviation ${Math.round(s.meanAbsCents)}¢ · ${tend}`;
+  const pitch = `${bars}: ${s.good}/${s.notes} notes within ±${prefs.toleranceCents}¢ · ${s.sung} sung · mean deviation ${Math.round(s.meanAbsCents)}¢ · ${tend}`;
+
+  let onsets = "Onsets: notes too short to judge";
+  if (s.onsets) {
+    const parts = [`${s.clean}/${s.onsets} hit cleanly (${Math.round((s.clean / s.onsets) * 100)}%)`];
+    if (s.scoops) parts.push(`${s.scoops} slid up from below`);
+    if (s.falls) parts.push(`${s.falls} came down from above`);
+    if (s.unsettled) parts.push(`${s.unsettled} never settled`);
+    if (s.scoops + s.falls) parts.push(`slides take ${Math.round(s.meanSlideMs)} ms to settle`);
+    onsets = `Onsets: ${parts.join(" · ")}`;
+  }
+  el.innerHTML = "";
+  for (const line of [pitch, onsets]) {
+    const d = document.createElement("div");
+    d.textContent = line;
+    d.title = line;
+    el.append(d);
+  }
 }
 
 // --- controls -------------------------------------------------------------
@@ -506,6 +532,13 @@ function bindControls(): void {
   oct.checked = prefs.octaveFree;
   oct.addEventListener("change", () => {
     prefs.octaveFree = oct.checked;
+    savePrefs();
+    rescore();
+  });
+  const onset = $<HTMLSelectElement>("onsetMs");
+  onset.value = String(prefs.onsetMs);
+  onset.addEventListener("change", () => {
+    prefs.onsetMs = +onset.value;
     savePrefs();
     rescore();
   });

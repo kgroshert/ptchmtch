@@ -187,6 +187,17 @@ export class PitchRoll {
       ctx.globalAlpha = 1;
       ctx.fillStyle = col;
       ctx.fillRect(x, y - 1, wd, 2);
+      const kind = res?.onset?.kind;
+      if (kind === "scoop" || kind === "fall") {
+        // Small ramp into the start of the bar, from the side the singer came from.
+        const dy = kind === "scoop" ? rowH * 0.9 : -rowH * 0.9;
+        ctx.strokeStyle = statusColor("close");
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x - 7, y + dy);
+        ctx.lineTo(x + 2, y);
+        ctx.stroke();
+      }
       if (res && res.status !== "missed" && wd > 34) {
         ctx.fillStyle = v("--fg");
         ctx.font = "10px system-ui, sans-serif";
@@ -351,6 +362,18 @@ export class PitchRoll {
       if (r && r.status !== "missed")
         lines.push(`${r.cents > 0 ? "+" : ""}${Math.round(r.cents)}¢ median · ${Math.round(r.inTune * 100)}% in tune`);
       else if (r) lines.push("not enough voiced sound");
+      const o = r?.onset;
+      if (o) {
+        const start = `${o.startCents > 0 ? "+" : ""}${Math.round(o.startCents)}¢`;
+        const settle = o.settleMs !== null ? `, on pitch after ${Math.round(o.settleMs)} ms` : "";
+        const text = {
+          clean: `clean onset (started at ${start}${settle})`,
+          scoop: `slid up from below (started at ${start}${settle})`,
+          fall: `came down from above (started at ${start}${settle})`,
+          unsettled: `never held the pitch steadily (started at ${start})`,
+        }[o.kind];
+        lines.push(text);
+      }
     }
     let near: TakeSample | null = null;
     for (const s of m.current) if (s.midi !== null && Math.abs(s.beat - beat) < 0.08) near = s;
