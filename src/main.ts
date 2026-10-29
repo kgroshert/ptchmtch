@@ -111,6 +111,8 @@ let pendingIdx = 0;
 let passResults = new Map<number, NoteResult>();
 /** Each note's median pitch (cents) in every pass since Play, for precision across loop passes. */
 let passMedians = new Map<number, number[]>();
+/** Mean absolute deviation (cents) of each loop pass that covered most of the notes. */
+let passAccuracies: number[] = [];
 /** Whether the current playback loops (the checkbox may change while playing). */
 let playLoop = false;
 /** Vibrato rate of the singer's most recent notes that had one, for judging short notes. */
@@ -172,6 +174,7 @@ function selectTrack(key: string | null): void {
   $<HTMLSelectElement>("voice").value = key ?? "";
   results = new Map();
   passMedians = new Map();
+  passAccuracies = [];
   singerRate = null;
   current = [];
   previous = [];
@@ -204,6 +207,7 @@ function setRange(from: number, to: number): void {
   to = Math.max(from, Math.min(n, to));
   range = { from, to };
   passMedians = new Map();
+  passAccuracies = [];
   syncRangeInputs();
   drawOverlay();
   const wasPlaying = player?.playing;
@@ -285,6 +289,7 @@ async function play(): Promise<void> {
   pendingIdx = 0;
   passResults = new Map();
   passMedians = new Map();
+  passAccuracies = [];
   playLoop = prefs.loop;
   hideToast();
   const first = track.events.find((ev) => ev.end > start);
@@ -311,7 +316,10 @@ function stop(completed = false): void {
   player.stop();
   finishPass(Infinity);
   if (completed) recordRun();
-  else if (playLoop) recordLoopSession();
+  else if (playLoop) {
+    notePassAccuracy(); // counts only if the last pass got far enough
+    recordLoopSession();
+  }
   playhead = null;
   setPlayingUI(false);
   document.body.classList.remove("graph-hidden");
@@ -362,6 +370,7 @@ function onSample(s: PitchSample): void {
     if (samplePass >= 0) {
       finishPass(Infinity);
       recordRun();
+      notePassAccuracy();
       passResults = new Map();
       previous = current;
       current = [];
@@ -474,11 +483,22 @@ function recordRun(): void {
   showToast(`Run complete: score <b>${Math.round(run.score)}</b> (${cmp})`);
 }
 
+/**
+ * Records the current pass's mean deviation for the loop's best-pass accuracy. Passes in which
+ * fewer than 80% of the notes were sung don't count, so a partial pass can't be the best one.
+ */
+function notePassAccuracy(): void {
+  const sung = [...passResults.values()].filter((r) => r.status !== "missed");
+  if (!pending.length || sung.length < 0.8 * pending.length) return;
+  passAccuracies.push(sung.reduce((a, r) => a + Math.abs(r.cents), 0) / sung.length);
+}
+
 /** Stores a loop session (several passes of the same bars) when looping stops. */
 function recordLoopSession(): void {
   if (!track || !tracker?.active) return;
   const p = precision(passMedians);
   if (!p || p.passes < 3) return;
+  const bestPass = passAccuracies.length ? Math.min(...passAccuracies) : null;
   const bars = `${score.measures[range.from].number}–${score.measures[range.to].number}`;
   const key = loopsKey(score.fingerprint, track.key);
   const last = loadRows<LoopSession>(key)
@@ -491,10 +511,17 @@ function recordLoopSession(): void {
     notes: p.notes,
     spread: p.spread,
     accuracy: p.accuracy,
+    bestPass,
     speed: prefs.speed,
   });
-  const cmp = last ? ` (last time on these bars: ±${last.spread.toFixed(1)}¢)` : "";
-  showToast(`Loop of bars ${bars}: notes varied <b>±${p.spread.toFixed(1)}¢</b> between ${p.passes} passes${cmp}`);
+  const spread = `notes varied ±${p.spread.toFixed(1)}¢ between ${p.passes} passes`;
+  if (bestPass === null) {
+    const cmp = last ? ` (last time on these bars: ±${last.spread.toFixed(1)}¢)` : "";
+    showToast(`Loop of bars ${bars}: <b>${spread}</b>${cmp}`);
+  } else {
+    const cmp = last?.bestPass != null ? ` (last time on these bars: ${last.bestPass.toFixed(1)}¢)` : "";
+    showToast(`Loop of bars ${bars}: best pass <b>${bestPass.toFixed(1)}¢</b> off on average${cmp} · ${spread}`);
+  }
 }
 
 let toastTimer = 0;
@@ -533,7 +560,7 @@ function openHistory(): void {
   }
   $("historyNote").textContent = {
     runs: "A run is recorded when you sing the whole piece to the end with the microphone on. Each note scores up to 100: half for how close its pitch is, 30% for staying within tolerance, 20% for a clean entry. Vibrato is measured on notes held for at least 0.6 s; the shaded band is the typical healthy range.",
-    loops: "A loop session is recorded when you stop after at least three passes of a looped selection. Spread shows how differently each note came out from pass to pass (precision); accuracy is how far the notes were off on average.",
+    loops: "A loop session is recorded when you stop after at least three passes of a looped selection. Accuracy is how far the notes were off on average in your best pass (passes with fewer than 80% of the notes sung don't count). Spread shows how differently each note came out from pass to pass (precision).",
     notes: "A session is recorded for each note you practise in the trainer for at least 2 seconds of singing. Vibrato is measured on the longest uninterrupted stretch.",
   }[historyTab];
   if (!dlg.open) dlg.showModal();

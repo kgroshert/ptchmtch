@@ -36,6 +36,8 @@ export interface LoopSession {
   spread: number;
   /** Mean absolute deviation of each note's average pitch, cents. */
   accuracy: number;
+  /** Mean absolute deviation in the best pass, cents (missing in sessions recorded before it existed). */
+  bestPass?: number | null;
   speed: number;
 }
 
@@ -147,15 +149,15 @@ export const RUN_VIEW: View<Run> = {
 export const LOOP_VIEW: View<LoopSession> = {
   empty: "No loop sessions yet. Turn on Loop, select a few bars and sing at least three passes.",
   metrics: [
+    { label: "Accuracy (best pass)", unit: "¢", value: (r) => r.bestPass, better: "lower", digits: 1 },
     { label: "Spread between passes", unit: "¢", value: (r) => r.spread, better: "lower", digits: 1 },
-    { label: "Accuracy (mean deviation)", unit: "¢", value: (r) => r.accuracy, better: "lower", digits: 1 },
   ],
   columns: [
     { label: "When", cell: (r) => fmtDate(r.date) },
     { label: "Bars", cell: (r) => r.bars },
     { label: "Passes", cell: (r) => String(r.passes) },
-    { label: "Spread", cell: (r) => `±${r.spread.toFixed(1)}¢`, strong: true },
-    { label: "Accuracy", cell: (r) => `${r.accuracy.toFixed(1)}¢` },
+    { label: "Accuracy (best pass)", cell: (r) => num(r.bestPass, 1, "¢"), strong: true },
+    { label: "Spread", cell: (r) => `±${r.spread.toFixed(1)}¢` },
     { label: "Notes", cell: (r) => String(r.notes) },
     { label: "Tempo", cell: (r) => `${r.speed}%` },
   ],
