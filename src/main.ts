@@ -481,7 +481,7 @@ trainer.onTone = (on) => {
 };
 
 scorePane.addEventListener("dblclick", (e) => {
-  const ev = score.eventAtElement(e.target as Element);
+  const ev = score.eventAtPoint(e.clientX, e.clientY);
   if (ev) void openTrainer(ev);
 });
 roll.onNoteDblClick = (ev) => void openTrainer(ev);

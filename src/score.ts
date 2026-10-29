@@ -53,7 +53,8 @@ export class Score {
 
   private cursorBeats: number[] = [];
   private cursorIndex = 0;
-  private elementEvents = new WeakMap<Element, NoteEvent>();
+  /** Notehead centres in OSMD units, one per rendered note (chord notes separately). */
+  private heads: { x: number; y: number; ev: NoteEvent }[] = [];
 
   constructor(private container: HTMLElement) {
     this.osmd = new OpenSheetMusicDisplay(container, {
@@ -90,18 +91,40 @@ export class Score {
     this.osmd.cursor.reset();
     this.cursorIndex = 0;
 
-    this.elementEvents = new WeakMap();
+    this.heads = [];
     for (const t of this.tracks)
-      for (const ev of t.events) for (const el of this.noteElements(ev)) this.elementEvents.set(el, ev);
+      for (const ev of t.events)
+        for (const note of ev.notes) {
+          const pos = this.osmd.EngravingRules.GNote(note)?.PositionAndShape?.AbsolutePosition;
+          if (pos) this.heads.push({ x: pos.x, y: pos.y, ev });
+        }
   }
 
-  /** The note event drawn at (or containing) a clicked SVG element. */
-  eventAtElement(el: Element | null): NoteEvent | null {
-    for (let e = el; e && e !== this.container; e = e.parentElement) {
-      const ev = this.elementEvents.get(e);
-      if (ev) return ev;
+  /**
+   * The note whose head is nearest to a point on screen. Hit-testing by position rather than by
+   * SVG element also works inside hollow noteheads and for each note of a chord, which share one element.
+   */
+  eventAtPoint(clientX: number, clientY: number): NoteEvent | null {
+    const svg = this.container.querySelector("svg");
+    if (!svg) return null;
+    const r = svg.getBoundingClientRect();
+    const scale = UNIT_PX * this.osmd.zoom;
+    const x = (clientX - r.left) / scale;
+    const y = (clientY - r.top) / scale;
+    let best: NoteEvent | null = null;
+    let bestDist = Infinity;
+    for (const h of this.heads) {
+      const dx = Math.abs(h.x - x);
+      const dy = Math.abs(h.y - y);
+      // A notehead is about 1.2 units wide and 1 unit high; allow a little slack around it.
+      if (dx > 1.2 || dy > 0.9) continue;
+      const d = dx * dx + dy * dy;
+      if (d < bestDist) {
+        bestDist = d;
+        best = h.ev;
+      }
     }
-    return null;
+    return best;
   }
 
   trackOf(ev: NoteEvent): Track | undefined {
