@@ -1,5 +1,6 @@
 import { centsOff, statusColor, type NoteResult, type Settings, type TakeSample } from "./analysis";
 import { midiName } from "./pitch";
+import { describeVibrato } from "./vibrato";
 import type { Measure, NoteEvent, Track } from "./score";
 
 export interface RollModel {
@@ -10,6 +11,8 @@ export interface RollModel {
   current: TakeSample[];
   previous: TakeSample[];
   results: Map<number, NoteResult>;
+  /** Each note's median cents in every pass of the current loop, for the tooltip. */
+  repeats: Map<number, number[]>;
   settings: Settings;
 }
 
@@ -382,6 +385,10 @@ export class PitchRoll {
         }[o.kind];
         lines.push(text);
       }
+      if (r?.vibrato) lines.push(describeVibrato(r.vibrato));
+      const reps = m.repeats.get(ev.id);
+      if (reps && reps.length > 1)
+        lines.push(`last ${reps.length} passes: ${reps.map((c) => `${c > 0 ? "+" : ""}${Math.round(c)}¢`).join(", ")}`);
     }
     let near: TakeSample | null = null;
     for (const s of m.current) if (s.midi !== null && Math.abs(s.beat - beat) < 0.08) near = s;

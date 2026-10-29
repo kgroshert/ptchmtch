@@ -35,38 +35,39 @@ Double-click a note in the score (any part) or in the pitch graph to practise th
 
 **Play note** (Space) sounds the target note continuously. **Previous** and **Next** (← →) step through the notes of the part. The trainer turns the microphone on if it's off.
 
+### Vibrato
+
+Every note held for at least 0.6 s is checked for vibrato. Its rate (Hz), width (± cents) and regularity (how evenly it repeats) are measured, and the note is classed as:
+
+| Class | What it means |
+| --- | --- |
+| even vibrato | about 5–7.5 Hz, up to about ±110¢: the healthy range in singing research (Seashore, Sundberg, Prame) |
+| wobble | slower than about 4.8 Hz or wider than about ±110¢; typical of tired or ageing voices and too much pressure |
+| fast vibrato (bleat) | faster than about 7.5 Hz |
+| straight tone | less than ±15¢ of movement |
+| unsteady pitch | moving, but without a regular oscillation |
+
+On notes with vibrato, tolerance and onsets are judged on the **centre** of the vibrato (averaged over one cycle), since that's the pitch listeners hear. Short notes borrow the vibrato rate of the singer's recent notes. Hover over a note in the graph to see its vibrato. The note trainer shows your vibrato live, and judges "held in tune" on its centre.
+
+### Precision across loop passes
+
+When you loop a section, each note's pitch is compared across passes. **Precision** is how consistently a note comes out the same each time. That's a different skill from **accuracy**, how close it is on average (Pfordresher et al., 2010). The summary shows the spread between passes, and hovering over a note lists its deviation in each pass.
+
 ### History
 
-Each time you sing the whole piece to the end with the microphone on, the run is scored from 0 to 100 and saved. A message shows the score compared with your last run. **History** shows a chart and a table of all runs for the selected part: score, notes in tune, mean deviation, sharp/flat tendency, clean onsets and tempo.
+**History** has three tabs. Each one has a chart where you can pick the metric, plus a table. Charts with a typical healthy range show it as a shaded band.
 
-Each note scores up to 100 points:
+- **Run-throughs**: each time you sing the whole piece to the end with the microphone on. Metrics: score (0–100), notes in tune, mean deviation, clean onsets, vibrato rate, width and regularity, and the share of notes with a wobble. A message after each run compares it with the last one.
+- **Loop practice**: recorded when you stop after at least three passes of a loop. Metrics: spread between passes (precision) and accuracy. The message compares it with your last session on the same bars.
+- **Long notes**: every note practised in the trainer for at least 2 seconds of singing, across all pieces. Metrics: share in tune, longest hold, mean deviation and vibrato.
+
+Each note in a run scores up to 100 points:
 
 - 50% for how close its median pitch is (0¢ gives full points, 100¢ or more gives none)
 - 30% for the share of the note held within tolerance
 - 20% for a clean entry (half for a slide, none if it never settled)
 
-Notes you didn't sing count as 0. Runs where less than 30% of the notes were sung aren't recorded. History is kept per piece and part in this browser's local storage, so it survives reloads but not clearing site data, and it isn't shared between browsers or computers.
-
-### Reading the pitch graph
-
-The bars are the written notes of your part, and the shaded band around each bar shows the tolerance. The line is your voice:
-
-- green: within tolerance (±25 cents by default)
-- amber: within twice the tolerance
-- red: further off
-- grey: the previous pass of a loop, for comparison
-
-Once a note has been sung, it is marked with its median deviation (e.g. `−12¢`) and its notehead in the score takes the same colour. Hover over a note to see details.
-
-The pitch score of a note ignores its first moments, so how you *enter* a note is measured separately:
-
-- **Clean**: on pitch straight away. The note's pitch holds within tolerance within the onset window (100 ms by default).
-- **Slid up from below / came down from above**: it took longer than the onset window to reach the pitch. A small amber ramp marks these notes in the graph.
-- **Never settled**: the pitch never held steady within tolerance.
-
-Hover over a note to see its deviation, where it started (e.g. `started at −140¢`) and how long it took to reach the pitch.
-
-Above the graph, two lines summarise the selected bars. The first covers pitch: notes within tolerance, mean deviation, and whether you tend to sing sharp or flat. The second covers onsets: the share of notes hit cleanly, the number of slides from below and from above, and how long slides take to settle on average.
+Notes you didn't sing count as 0. Runs where less than 30% of the notes were sung aren't recorded. History is kept in this browser's local storage, so it survives reloads but not clearing site data, and it isn't shared between browsers or computers.
 
 ### Settings
 
@@ -96,11 +97,12 @@ Calibrate again whenever you change headphones or microphone.
 | `src/score.ts` | Renders the score with [OpenSheetMusicDisplay](https://opensheetmusicdisplay.org/) and reads parts, voices, notes (ties merged), bars and tempo from its model. Also handles the cursor, bar geometry and notehead colouring. |
 | `src/player.ts` | Web Audio scheduler and a simple built-in synth. Handles per-part volume, count-in, metronome and looping. Maps audio time to score position. |
 | `src/pitch.ts` | Microphone input with the McLeod pitch method ([pitchy](https://github.com/ianprime0509/pitchy)), with browser voice processing turned off. |
-| `src/analysis.ts` | Scores each note: median deviation in cents, share of the note in tune, coverage, and how the note was entered (clean, slide, unsettled). |
+| `src/analysis.ts` | Scores each note (median deviation, share in tune, coverage, onset, vibrato) and computes precision across passes. |
 | `src/roll.ts` | The pitch graph (canvas). |
 | `src/trainer.ts` | Single-note pitch trainer. |
 | `src/calibration.ts` | Latency calibration: plays the beats, detects syllable onsets, computes the correction. |
-| `src/history.ts` | Stores runs in local storage and draws the history chart and table. |
+| `src/vibrato.ts` | Vibrato rate, width, regularity and classification; vibrato centre line. |
+| `src/history.ts` | Stores runs, loop sessions and trainer sessions in local storage; charts and tables. |
 | `src/main.ts` | UI wiring and state. |
 
 All positions are measured in quarter-note beats, so the graph does not change when you change the tempo.

@@ -720,3 +720,36 @@ dialog.calibration .actions {
 .calibrate {
   justify-self: start;
 }
+
+.history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.history-head h2 {
+  margin: 0;
+}
+
+.history-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.history-chart .band {
+  fill: #1f9d55;
+  opacity: 0.1;
+}
+
+.trainer-readout .vibrato {
+  font-size: 13px;
+  color: var(--muted);
+  min-height: 2.6em;
+}

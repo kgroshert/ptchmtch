@@ -1,5 +1,7 @@
 import { centsOff, statusColor, type Settings } from "./analysis";
+import type { TrainerSession } from "./history";
 import { midiName, type PitchSample } from "./pitch";
+import { analyseVibrato, describeVibrato, oscillates, type PitchPoint } from "./vibrato";
 
 export interface TrainerTarget {
   midi: number;
@@ -10,11 +12,19 @@ export interface TrainerTarget {
 interface Point {
   time: number;
   cents: number | null;
+  /** The pitch as judged: the vibrato centre while a vibrato is detected, else the raw pitch. */
+  judged: number | null;
 }
 
 const SPAN_SEC = 8;
 const RANGE_CENTS = 150;
 const STEADY_SEC = 5;
+/** Live vibrato is measured over this much of the current held stretch. */
+const VIBRATO_SEC = 1.5;
+/** Practice shorter than this isn't recorded. */
+const MIN_SESSION_SEC = 2;
+/** A dropout longer than this ends a held stretch. */
+const MAX_GAP = 0.06;
 
 /** Live view of the sung pitch against a single target note. */
 export class PitchTrainer {
@@ -22,13 +32,23 @@ export class PitchTrainer {
   onNext: () => void = () => {};
   /** Called when the reference tone should start (true) or stop (false). */
   onTone: (on: boolean) => void = () => {};
+  /** Called when practice on a note ends (another note, or closing), if it lasted long enough. */
+  onSession: (s: TrainerSession) => void = () => {};
 
   private target: TrainerTarget | null = null;
   private settings: Settings = { toleranceCents: 25, octaveFree: false, onsetMs: 100 };
   private points: Point[] = [];
   private streakStart: number | null = null;
   private best = 0;
+  /** One vibrato cycle while a vibrato is detected, else 0 (judge the raw pitch). */
+  private cycleSec = 0;
   private toneOn = false;
+  // Session totals for the current note.
+  private voicedSec = 0;
+  private inTuneSec = 0;
+  private absCentsSec = 0;
+  private held: PitchPoint[] = [];
+  private longestHeld: PitchPoint[] = [];
   private raf = 0;
   private ctx: CanvasRenderingContext2D;
   private $ = (id: string) => this.dlg.querySelector<HTMLElement>(`#${id}`)!;
@@ -40,6 +60,7 @@ export class PitchTrainer {
     this.$("trTone").addEventListener("click", () => this.setTone(!this.toneOn));
     this.$("trClose").addEventListener("click", () => this.dlg.close());
     this.dlg.addEventListener("close", () => {
+      this.flush();
       this.setTone(false);
       cancelAnimationFrame(this.raf);
     });
@@ -70,10 +91,14 @@ export class PitchTrainer {
   }
 
   setTarget(target: TrainerTarget): void {
+    this.flush();
     this.target = target;
     this.points = [];
     this.streakStart = null;
     this.best = 0;
+    this.voicedSec = this.inTuneSec = this.absCentsSec = 0;
+    this.held = [];
+    this.longestHeld = [];
     this.$("trTitle").textContent = midiName(target.midi);
     this.$("trContext").textContent = target.context;
     if (this.toneOn) {
@@ -90,17 +115,59 @@ export class PitchTrainer {
   push(s: PitchSample): void {
     if (!this.target || !this.dlg.open) return;
     const cents = s.midi === null ? null : centsOff(s.midi, this.target.midi, this.settings.octaveFree);
-    this.points.push({ time: s.time, cents });
+    const prev = this.points[this.points.length - 1];
+
+    // Session totals and the current uninterrupted held stretch (for vibrato).
+    const last = this.held[this.held.length - 1];
+    if (cents === null || (last && s.time - last.time > MAX_GAP)) this.endHeld();
+    let judged = cents;
+    if (cents !== null) {
+      this.held.push({ time: s.time, cents });
+      if (this.cycleSec) {
+        // Average over the last vibrato cycle: listeners hear the centre as the pitch.
+        const recent = this.held.filter((p) => p.time > s.time - this.cycleSec);
+        judged = recent.reduce((a, p) => a + p.cents, 0) / recent.length;
+      }
+      if (prev?.cents != null && s.time - prev.time <= MAX_GAP) {
+        const dt = s.time - prev.time;
+        this.voicedSec += dt;
+        this.absCentsSec += Math.abs(judged!) * dt;
+        if (Math.abs(judged!) <= this.settings.toleranceCents) this.inTuneSec += dt;
+      }
+    }
+    this.points.push({ time: s.time, cents, judged });
     const cutoff = s.time - SPAN_SEC - 1;
     while (this.points.length && this.points[0].time < cutoff) this.points.shift();
 
-    const inTune = cents !== null && Math.abs(cents) <= this.settings.toleranceCents;
+    const inTune = judged !== null && Math.abs(judged) <= this.settings.toleranceCents;
     if (inTune) {
       this.streakStart ??= s.time;
       this.best = Math.max(this.best, s.time - this.streakStart);
     } else {
       this.streakStart = null;
     }
+  }
+
+  private endHeld(): void {
+    if (this.held.length > this.longestHeld.length) this.longestHeld = this.held;
+    this.held = [];
+  }
+
+  /** Reports the practice on the current note, if there was enough of it. */
+  private flush(): void {
+    this.endHeld();
+    if (!this.target || this.voicedSec < MIN_SESSION_SEC) return;
+    this.onSession({
+      date: Date.now(),
+      midi: this.target.midi,
+      context: this.target.context,
+      voicedSec: this.voicedSec,
+      inTune: this.inTuneSec / this.voicedSec,
+      longestHold: this.best,
+      meanAbsCents: this.absCentsSec / this.voicedSec,
+      vibrato: analyseVibrato(this.longestHeld),
+    });
+    this.voicedSec = 0; // reported once
   }
 
   private setTone(on: boolean): void {
@@ -164,7 +231,7 @@ export class PitchTrainer {
       const a = pts[i - 1];
       const b = pts[i];
       if (a.cents === null || b.cents === null || b.time - a.time > 0.1 || x(a.time) < LEFT) continue;
-      ctx.strokeStyle = statusColor(this.classify(b.cents));
+      ctx.strokeStyle = statusColor(this.classify(b.judged ?? b.cents));
       ctx.beginPath();
       ctx.moveTo(x(a.time), y(a.cents));
       ctx.lineTo(x(b.time), y(b.cents));
@@ -173,7 +240,8 @@ export class PitchTrainer {
 
     // Readout
     const last = pts[pts.length - 1];
-    const cents = last?.cents ?? null;
+    // The number and colour follow the judged pitch; the dot sits on the raw trace.
+    const cents = last?.judged ?? null;
     const big = this.$("trCents");
     const state = this.$("trState");
     if (cents === null) {
@@ -183,7 +251,7 @@ export class PitchTrainer {
     } else {
       ctx.fillStyle = statusColor(this.classify(cents));
       ctx.beginPath();
-      ctx.arc(x(last.time), y(cents), 6, 0, Math.PI * 2);
+      ctx.arc(x(last.time), y(last.cents ?? cents), 6, 0, Math.PI * 2);
       ctx.fill();
       big.textContent = `${cents > 0 ? "+" : ""}${Math.round(cents)}¢`;
       big.style.color = statusColor(this.classify(cents));
@@ -195,6 +263,10 @@ export class PitchTrainer {
     const recent = pts.filter((p) => p.time >= now - STEADY_SEC && p.cents !== null);
     const share = recent.length ? recent.filter((p) => Math.abs(p.cents!) <= tol).length / recent.length : null;
     const streak = this.streakStart !== null && last ? last.time - this.streakStart : 0;
+    const recentHeld = this.held.filter((p) => p.time >= now - VIBRATO_SEC);
+    const vib = analyseVibrato(recentHeld);
+    this.cycleSec = oscillates(vib) ? 1 / vib.rate : 0;
+    this.$("trVibrato").textContent = vib ? `Vibrato: ${describeVibrato(vib)}` : "Vibrato: hold the note to measure";
     this.$("trStats").innerHTML =
       `<div><b>${streak.toFixed(1)} s</b> held in tune</div>` +
       `<div><b>${this.best.toFixed(1)} s</b> longest hold</div>` +

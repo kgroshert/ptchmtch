@@ -1,10 +1,35 @@
 import { Calibration } from "./calibration";
-import { evaluate, runScore, statusColor, summarize, type NoteResult, type Settings, type TakeSample } from "./analysis";
-import { addRun, clearRuns, loadRuns, renderHistory, type Run } from "./history";
+import {
+  evaluate,
+  precision,
+  runScore,
+  statusColor,
+  summarize,
+  summarizeVibrato,
+  type NoteResult,
+  type Settings,
+  type TakeSample,
+} from "./analysis";
+import {
+  addRow,
+  clearRows,
+  loadRows,
+  LOOP_VIEW,
+  loopsKey,
+  renderView,
+  RUN_VIEW,
+  runsKey,
+  TRAINER_KEY,
+  TRAINER_VIEW,
+  type LoopSession,
+  type Run,
+  type TrainerSession,
+} from "./history";
 import { midiName, PitchTracker, type PitchSample } from "./pitch";
 import { Player } from "./player";
 import { PitchRoll } from "./roll";
 import { Score, type NoteEvent, type Track } from "./score";
+import { oscillates } from "./vibrato";
 import { PitchTrainer } from "./trainer";
 
 type Mode = "lead" | "normal" | "mute";
@@ -84,6 +109,12 @@ let pending: NoteEvent[] = [];
 let pendingIdx = 0;
 /** Results scored during the current pass only, for recording a run. */
 let passResults = new Map<number, NoteResult>();
+/** Each note's median pitch (cents) in every pass since Play, for precision across loop passes. */
+let passMedians = new Map<number, number[]>();
+/** Whether the current playback loops (the checkbox may change while playing). */
+let playLoop = false;
+/** Vibrato rate of the singer's most recent notes that had one, for judging short notes. */
+let singerRate: number | null = null;
 let playhead: number | null = null;
 
 const settings = (): Settings => ({
@@ -140,6 +171,8 @@ function selectTrack(key: string | null): void {
   track = score.tracks.find((t) => t.key === key) ?? null;
   $<HTMLSelectElement>("voice").value = key ?? "";
   results = new Map();
+  passMedians = new Map();
+  singerRate = null;
   current = [];
   previous = [];
   paintTrack();
@@ -170,6 +203,7 @@ function setRange(from: number, to: number): void {
   from = Math.max(0, Math.min(n, from));
   to = Math.max(from, Math.min(n, to));
   range = { from, to };
+  passMedians = new Map();
   syncRangeInputs();
   drawOverlay();
   const wasPlaying = player?.playing;
@@ -250,6 +284,8 @@ async function play(): Promise<void> {
   pending = track.events.filter((ev) => ev.start >= start - 1e-6 && ev.end <= end + 1e-6);
   pendingIdx = 0;
   passResults = new Map();
+  passMedians = new Map();
+  playLoop = prefs.loop;
   hideToast();
   const first = track.events.find((ev) => ev.end > start);
   roll.follow = true;
@@ -275,6 +311,7 @@ function stop(completed = false): void {
   player.stop();
   finishPass(Infinity);
   if (completed) recordRun();
+  else if (playLoop) recordLoopSession();
   playhead = null;
   setPlayingUI(false);
   document.body.classList.remove("graph-hidden");
@@ -347,9 +384,11 @@ function finishPass(beat: number): void {
   let changed = false;
   while (pendingIdx < pending.length && done(pending[pendingIdx])) {
     const ev = pending[pendingIdx++];
-    const r = evaluate(ev, current, settings());
+    const r = evaluate(ev, current, settings(), singerRate);
+    if (r.vibrato) singerRate = oscillates(r.vibrato) ? r.vibrato.rate : null;
     results.set(ev.id, r);
     passResults.set(ev.id, r);
+    if (r.status !== "missed") passMedians.set(ev.id, [...(passMedians.get(ev.id) ?? []), r.cents]);
     score.colorEvent(ev, statusColor(r.status));
     changed = true;
   }
@@ -403,7 +442,9 @@ function recordRun(): void {
   const rs = track.events.map((ev) => passResults.get(ev.id)).filter((r): r is NoteResult => !!r);
   const s = summarize(rs);
   if (s.sung < track.events.length * 0.3) return; // not really a run-through
-  const before = loadRuns(score.fingerprint, track.key);
+  const key = runsKey(score.fingerprint, track.key);
+  const before = loadRows<Run>(key);
+  const vib = summarizeVibrato(rs);
   const run: Run = {
     date: Date.now(),
     score: runScore(track.events, passResults),
@@ -415,8 +456,13 @@ function recordRun(): void {
     cleanRate: s.onsets ? s.clean / s.onsets : null,
     speed: prefs.speed,
     toleranceCents: prefs.toleranceCents,
+    vibratoNotes: vib.analysed,
+    vibratoRate: vib.rate,
+    vibratoExtent: vib.extent,
+    vibratoRegularity: vib.regularity,
+    wobbleShare: vib.analysed ? vib.counts.wobble / vib.analysed : null,
   };
-  addRun(score.fingerprint, track.key, run);
+  addRow(key, run);
   const prev = before[before.length - 1];
   const best = Math.max(...before.map((r) => r.score));
   let cmp = "first recorded run";
@@ -426,6 +472,29 @@ function recordRun(): void {
     if (run.score > best) cmp += " · new best";
   }
   showToast(`Run complete: score <b>${Math.round(run.score)}</b> (${cmp})`);
+}
+
+/** Stores a loop session (several passes of the same bars) when looping stops. */
+function recordLoopSession(): void {
+  if (!track || !tracker?.active) return;
+  const p = precision(passMedians);
+  if (!p || p.passes < 3) return;
+  const bars = `${score.measures[range.from].number}–${score.measures[range.to].number}`;
+  const key = loopsKey(score.fingerprint, track.key);
+  const last = loadRows<LoopSession>(key)
+    .filter((s) => s.bars === bars)
+    .pop();
+  addRow<LoopSession>(key, {
+    date: Date.now(),
+    bars,
+    passes: p.passes,
+    notes: p.notes,
+    spread: p.spread,
+    accuracy: p.accuracy,
+    speed: prefs.speed,
+  });
+  const cmp = last ? ` (last time on these bars: ±${last.spread.toFixed(1)}¢)` : "";
+  showToast(`Loop of bars ${bars}: notes varied <b>±${p.spread.toFixed(1)}¢</b> between ${p.passes} passes${cmp}`);
 }
 
 let toastTimer = 0;
@@ -442,16 +511,31 @@ function hideToast(): void {
   $("toast").hidden = true;
 }
 
+type HistoryTab = "runs" | "loops" | "notes";
+let historyTab: HistoryTab = "runs";
+
 function openHistory(): void {
   hideToast();
   const dlg = $<HTMLDialogElement>("history");
-  if (!loaded || !track) {
+  for (const b of $("historyTabs").querySelectorAll<HTMLButtonElement>("button"))
+    b.classList.toggle("on", b.dataset.tab === historyTab);
+  const body = $("historyBody");
+  if (historyTab === "notes") {
+    $("historyFor").textContent = "All notes practised in the pitch trainer, across pieces.";
+    renderView(body, loadRows<TrainerSession>(TRAINER_KEY), TRAINER_VIEW);
+  } else if (!loaded || !track) {
     $("historyFor").textContent = "Open a score first.";
-    $("historyBody").innerHTML = "";
+    body.innerHTML = "";
   } else {
     $("historyFor").textContent = `${track.label} · ${score.title}`;
-    renderHistory($("historyBody"), loadRuns(score.fingerprint, track.key));
+    if (historyTab === "runs") renderView(body, loadRows<Run>(runsKey(score.fingerprint, track.key)), RUN_VIEW);
+    else renderView(body, loadRows<LoopSession>(loopsKey(score.fingerprint, track.key)), LOOP_VIEW);
   }
+  $("historyNote").textContent = {
+    runs: "A run is recorded when you sing the whole piece to the end with the microphone on. Each note scores up to 100: half for how close its pitch is, 30% for staying within tolerance, 20% for a clean entry. Vibrato is measured on notes held for at least 0.6 s; the shaded band is the typical healthy range.",
+    loops: "A loop session is recorded when you stop after at least three passes of a looped selection. Spread shows how differently each note came out from pass to pass (precision); accuracy is how far the notes were off on average.",
+    notes: "A session is recorded for each note you practise in the trainer for at least 2 seconds of singing. Vibrato is measured on the longest uninterrupted stretch.",
+  }[historyTab];
   if (!dlg.open) dlg.showModal();
 }
 
@@ -466,7 +550,7 @@ async function openTrainer(ev: NoteEvent): Promise<void> {
 
 function trainerContext(ev: NoteEvent): string {
   const t = score.trackOf(ev);
-  return `${t?.label ?? ""} · bar ${score.measures[ev.measureIndex]?.number ?? ""}`;
+  return `${t?.label ?? ""} · bar ${score.measures[ev.measureIndex]?.number ?? ""} · ${score.title}`;
 }
 
 function stepTrainer(dir: 1 | -1): void {
@@ -480,6 +564,7 @@ function stepTrainer(dir: 1 | -1): void {
 
 trainer.onPrev = () => stepTrainer(-1);
 trainer.onNext = () => stepTrainer(1);
+trainer.onSession = (s) => addRow(TRAINER_KEY, s);
 trainer.onTone = (on) => {
   stopTone?.();
   stopTone = null;
@@ -504,6 +589,7 @@ function refresh(): void {
     current,
     previous,
     results,
+    repeats: passMedians,
     settings: settings(),
   });
 }
@@ -539,8 +625,31 @@ function updateSummary(): void {
     if (s.scoops + s.falls) parts.push(`slides take ${Math.round(s.meanSlideMs)} ms to settle`);
     onsets = `Onsets: ${parts.join(" · ")}`;
   }
+  const extra: string[] = [];
+  const vib = summarizeVibrato(rs);
+  if (vib.analysed) {
+    const c = vib.counts;
+    const kinds = [
+      c.vibrato && `${c.vibrato} even`,
+      c.wobble && `${c.wobble} wobble`,
+      c.fast && `${c.fast} fast`,
+      c.straight && `${c.straight} straight`,
+      c.unsteady && `${c.unsteady} unsteady`,
+    ].filter(Boolean);
+    const avg =
+      vib.rate !== null
+        ? ` · ${vib.rate.toFixed(1)} Hz, ±${Math.round(vib.extent!)}¢, ${Math.round(vib.regularity! * 100)}% regular`
+        : "";
+    extra.push(`Vibrato on ${vib.analysed} held notes: ${kinds.join(", ")}${avg}`);
+  }
+  const inRangeIds = new Set(inRange.map((ev) => ev.id));
+  const p = precision(new Map([...passMedians].filter(([id]) => inRangeIds.has(id))));
+  if (p) extra.push(`Precision: notes varied ±${p.spread.toFixed(1)}¢ between ${p.passes} passes`);
+  const lines = [pitch, onsets];
+  if (extra.length) lines.push(extra.join(" · "));
+
   el.innerHTML = "";
-  for (const line of [pitch, onsets]) {
+  for (const line of lines) {
     const d = document.createElement("div");
     d.textContent = line;
     d.title = line;
@@ -640,9 +749,19 @@ function bindControls(): void {
 
   $("historyBtn").addEventListener("click", openHistory);
   $("historyClose").addEventListener("click", () => $<HTMLDialogElement>("history").close());
+  for (const b of $("historyTabs").querySelectorAll<HTMLButtonElement>("button"))
+    b.addEventListener("click", () => {
+      historyTab = b.dataset.tab as HistoryTab;
+      openHistory();
+    });
   $("historyClear").addEventListener("click", () => {
-    if (!track || !confirm(`Delete all recorded runs of ${track.label}?`)) return;
-    clearRuns(score.fingerprint, track.key);
+    if (historyTab === "notes") {
+      if (confirm("Delete the history of all notes practised in the trainer?")) clearRows(TRAINER_KEY);
+    } else if (track) {
+      const what = historyTab === "runs" ? "recorded runs" : "loop sessions";
+      if (!confirm(`Delete all ${what} of ${track.label} in ${score.title}?`)) return;
+      clearRows((historyTab === "runs" ? runsKey : loopsKey)(score.fingerprint, track.key));
+    }
     openHistory();
   });
 
@@ -759,7 +878,7 @@ function rescore(): void {
     const { start, end } = rangeBeats();
     const last = current[current.length - 1].beat;
     for (const ev of track.events) {
-      if (ev.start >= start && ev.end <= end && ev.end <= last) results.set(ev.id, evaluate(ev, current, settings()));
+      if (ev.start >= start && ev.end <= end && ev.end <= last) results.set(ev.id, evaluate(ev, current, settings(), singerRate));
     }
   }
   paintTrack();

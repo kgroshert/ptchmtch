@@ -123,6 +123,7 @@
         <div class="trainer-readout">
           <div id="trCents" class="big">—</div>
           <div id="trState" class="state"></div>
+          <div id="trVibrato" class="vibrato"></div>
           <div id="trStats" class="stats"></div>
         </div>
         <canvas id="trCanvas"></canvas>
@@ -134,14 +135,17 @@
     </dialog>
 
     <dialog id="history" class="history">
-      <h2>History</h2>
+      <div class="history-head">
+        <h2>History</h2>
+        <div class="seg" id="historyTabs">
+          <button data-tab="runs">Run-throughs</button>
+          <button data-tab="loops">Loop practice</button>
+          <button data-tab="notes">Long notes</button>
+        </div>
+      </div>
       <p id="historyFor" class="muted"></p>
       <div id="historyBody"></div>
-      <p class="note">
-        A run is recorded when you sing the whole piece to the end with the microphone on. Each note scores up to 100:
-        half for how close its pitch is, 30% for staying within tolerance, 20% for a clean entry. Runs at a different
-        tempo or tolerance are not directly comparable. History is stored in this browser only.
-      </p>
+      <p class="note"><span id="historyNote"></span> History is stored in this browser only.</p>
       <div class="actions">
         <button id="historyClear" class="btn ghost">Clear history</button>
         <span class="spacer"></span>
