@@ -46,6 +46,8 @@ interface Prefs {
   hideGraph: boolean;
   toleranceCents: number;
   octaveFree: boolean;
+  /** Play and score notes under 8va/8vb marks as written, without the octave shift. */
+  ignoreOctaveShifts: boolean;
   onsetMs: number;
   latencyMs: number;
   deviceId: string;
@@ -64,6 +66,7 @@ const DEFAULTS: Prefs = {
   hideGraph: false,
   toleranceCents: 25,
   octaveFree: false,
+  ignoreOctaveShifts: false,
   onsetMs: 100,
   latencyMs: 0,
   deviceId: "",
@@ -92,6 +95,7 @@ function savePrefs(): void {
 
 const scorePane = $("scorePane");
 const score = new Score($("score"));
+score.setIgnoreOctaveShifts(prefs.ignoreOctaveShifts);
 const roll = new PitchRoll($<HTMLCanvasElement>("roll"), $("tip"));
 let player: Player | null = null;
 let tracker: PitchTracker | null = null;
@@ -157,6 +161,17 @@ async function loadScore(content: string | Blob, name: string): Promise<void> {
   $("title").textContent = score.title;
   document.title = `${score.title} · ptchmtch`;
 
+  fillVoiceSelect();
+  range = { from: 0, to: score.measures.length - 1 };
+  selectTrack(score.tracks[0]?.key ?? null);
+  roll.viewStart = -0.5;
+  scorePane.scrollTop = 0;
+  syncRangeInputs();
+  drawOverlay();
+}
+
+/** Lists the parts with their ranges. */
+function fillVoiceSelect(): void {
   const sel = $<HTMLSelectElement>("voice");
   sel.innerHTML = "";
   for (const t of score.tracks) {
@@ -165,12 +180,7 @@ async function loadScore(content: string | Blob, name: string): Promise<void> {
     o.textContent = `${t.label} (${midiName(t.minMidi)}–${midiName(t.maxMidi)})`;
     sel.append(o);
   }
-  range = { from: 0, to: score.measures.length - 1 };
-  selectTrack(score.tracks[0]?.key ?? null);
-  roll.viewStart = -0.5;
-  scorePane.scrollTop = 0;
-  syncRangeInputs();
-  drawOverlay();
+  sel.value = track?.key ?? "";
 }
 
 function selectTrack(key: string | null): void {
@@ -873,6 +883,20 @@ function bindControls(): void {
     prefs.octaveFree = oct.checked;
     savePrefs();
     rescore();
+  });
+  const ottava = $<HTMLInputElement>("ignoreOctaveShifts");
+  ottava.checked = prefs.ignoreOctaveShifts;
+  ottava.addEventListener("change", () => {
+    prefs.ignoreOctaveShifts = ottava.checked;
+    savePrefs();
+    stop();
+    score.setIgnoreOctaveShifts(ottava.checked);
+    if (!loaded) return;
+    // The affected notes have new target pitches, so earlier results no longer apply.
+    fillVoiceSelect();
+    selectTrack(track?.key ?? null);
+    updateSummary();
+    if (score.hasOctaveShifts) showToast(ottava.checked ? "8va/8vb marks are now ignored: those notes play as written." : "8va/8vb marks apply again.");
   });
   const onset = $<HTMLSelectElement>("onsetMs");
   onset.value = String(prefs.onsetMs);

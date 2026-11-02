@@ -75,6 +75,7 @@ Notes you didn't sing count as 0. Runs where less than 30% of the notes were sun
 - **Tolerance**: ±10 to ±50 cents.
 - **Clean onset**: how quickly a note must be on pitch to count as hit cleanly (60–250 ms).
 - **Ignore octave**: counts singing in another octave as correct, e.g. a tenor part sung an octave up.
+- **Ignore 8va / 8vb marks**: plays and scores notes under octave marks as written, without the octave shift. Use it when a mark is only there for readability, or is a mistake in the score. History is unaffected.
 - **Latency correction**: lines up your pitch line with the notes. Use **Calibrate…** to measure it (see below), or adjust it by hand if your line always looks a little late or early.
 - **Microphone**: choose the input device.
 

@@ -4,7 +4,10 @@ import { OpenSheetMusicDisplay, type Note } from "opensheetmusicdisplay";
 export interface NoteEvent {
   id: number;
   trackKey: string;
+  /** Pitch to play and to sing (see `Score.setIgnoreOctaveShifts`). */
   midi: number;
+  /** Semitones an 8va/8vb/15ma/15mb mark adds to the written note (0 outside such marks). */
+  octaveShift: number;
   start: number;
   end: number;
   measureIndex: number;
@@ -51,6 +54,10 @@ export class Score {
   /** Identifies the piece by its notes, independent of file name or format. */
   fingerprint = "";
 
+  private ignoreOctaveShifts = false;
+  /** Each event's pitch as notated, including any 8va/8vb shift. */
+  private sounding = new Map<NoteEvent, number>();
+
   private cursorBeats: number[] = [];
   private cursorIndex = 0;
   /** Notehead centres in OSMD units, one per rendered note (chord notes separately). */
@@ -73,8 +80,38 @@ export class Score {
     this.title = this.osmd.Sheet.TitleString || "Untitled";
     this.extractMeasures();
     this.extractTracks();
+    // Fingerprint the pitches as notated, so the history doesn't depend on the 8va setting.
     this.fingerprint = fingerprint(this.title, this.tracks);
+    this.applyOctaveShifts();
     this.render();
+  }
+
+  /**
+   * With `ignore`, notes under 8va/8vb (15ma/15mb) marks sound as written, without the shift. Useful
+   * when a mark is only there for readability or is an error in the score.
+   */
+  setIgnoreOctaveShifts(ignore: boolean): void {
+    if (ignore === this.ignoreOctaveShifts) return;
+    this.ignoreOctaveShifts = ignore;
+    this.applyOctaveShifts();
+  }
+
+  /** Whether the loaded score contains any 8va/8vb marks. */
+  get hasOctaveShifts(): boolean {
+    return this.tracks.some((t) => t.events.some((ev) => ev.octaveShift));
+  }
+
+  private applyOctaveShifts(): void {
+    for (const t of this.tracks) {
+      t.minMidi = 127;
+      t.maxMidi = 0;
+      for (const ev of t.events) {
+        // The notated pitch includes the shift; keep the original in `sounding`.
+        ev.midi = this.sounding.get(ev)! - (this.ignoreOctaveShifts ? ev.octaveShift : 0);
+        t.minMidi = Math.min(t.minMidi, ev.midi);
+        t.maxMidi = Math.max(t.maxMidi, ev.midi);
+      }
+    }
   }
 
   /** (Re-)lays out the score. Any notehead colouring must be re-applied afterwards. */
@@ -261,6 +298,23 @@ export class Score {
     const eventOf = new Map<Note, NoteEvent>();
     let nextId = 0;
     const instruments = this.osmd.Sheet.Instruments;
+    const staves = this.osmd.Sheet.Staves;
+    this.sounding = new Map();
+
+    // 8va/8vb ranges per staff. MusicXML pitches already include the shift; OSMD only uses it for drawing.
+    const shifts: { staff: number; from: number; to: number; semitones: number }[] = [];
+    for (const sm of this.osmd.Sheet.SourceMeasures) {
+      sm.StaffLinkedExpressions.forEach((list, staff) => {
+        for (const me of list) {
+          const os = me.OctaveShiftStart;
+          if (!os) continue;
+          const end = os.ParentEndMultiExpression;
+          // OctaveEnum: VA8, VB8, MA15, MB15, NONE
+          const semitones = [12, -12, 24, -24, 0][os.Type] ?? 0;
+          shifts.push({ staff, from: me.AbsoluteTimestamp.RealValue * 4, to: end ? end.AbsoluteTimestamp.RealValue * 4 : Infinity, semitones });
+        }
+      });
+    }
 
     this.osmd.Sheet.SourceMeasures.forEach((sm, measureIndex) => {
       const mStart = sm.AbsoluteTimestamp.RealValue * 4;
@@ -293,10 +347,13 @@ export class Score {
                 byKey.set(key, track);
               }
               const midi = Math.round(69 + 12 * Math.log2(note.Pitch.Frequency / 440));
+              const staff = staves.indexOf(se.ParentStaff);
+              const shift = shifts.find((r) => r.staff === staff && start >= r.from - 1e-6 && start < r.to - 1e-6);
               const ev: NoteEvent = {
                 id: nextId++,
                 trackKey: key,
                 midi,
+                octaveShift: shift?.semitones ?? 0,
                 start,
                 end: start + len,
                 measureIndex,
@@ -305,6 +362,7 @@ export class Score {
               track.events.push(ev);
               track.minMidi = Math.min(track.minMidi, midi);
               track.maxMidi = Math.max(track.maxMidi, midi);
+              this.sounding.set(ev, midi);
               eventOf.set(note, ev);
             }
           }
