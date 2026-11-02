@@ -82,6 +82,20 @@ export function addRow<T>(key: string, row: T): T[] {
   return rows;
 }
 
+/** Replaces the row matching `same` (or appends one) and returns the updated list. */
+export function upsertRow<T>(key: string, same: (r: T) => boolean, row: T): T[] {
+  const rows = loadRows<T>(key);
+  const i = rows.findIndex(same);
+  if (i < 0) return addRow(key, row);
+  rows[i] = row;
+  try {
+    localStorage.setItem(key, JSON.stringify(rows));
+  } catch {
+    /* storage unavailable or full */
+  }
+  return rows;
+}
+
 export function clearRows(key: string): void {
   try {
     localStorage.removeItem(key);

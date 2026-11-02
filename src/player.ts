@@ -11,6 +11,8 @@ export interface PlayOptions {
   /** MIDI note to sound during the count-in so the singer gets their starting pitch. */
   referenceMidi: number | null;
   metronome: boolean;
+  /** Start the first pass here instead of at `startBeat` (continuing after a stop); later passes start at `startBeat`. */
+  resumeBeat?: number;
 }
 
 /** Where the transport is at a given AudioContext time. */
@@ -40,6 +42,8 @@ export class Player {
   private schedPass = 0;
   private firstPassAt = 0;
   private passDur = 0;
+  /** Seconds into the first pass where playback begins (resuming), 0 otherwise. */
+  private offset = 0;
   private opts: PlayOptions | null = null;
   private sources: AudioScheduledSourceNode[] = [];
 
@@ -111,20 +115,28 @@ export class Player {
     }
     items.sort((a, b) => a.at - b.at);
     this.items = items;
-    this.pointer = 0;
+    const from = Math.min(Math.max(opts.resumeBeat ?? opts.startBeat, opts.startBeat), opts.endBeat);
+    this.offset = toPass(from);
+    this.pointer = items.findIndex((it) => it.at >= this.offset - 1e-6);
+    if (this.pointer < 0) this.pointer = items.length;
     this.schedPass = 0;
 
     // Count-in: one bar of clicks at the starting tempo, optionally over the reference pitch.
     const start = ctx.currentTime + 0.12;
     let countInDur = 0;
     if (opts.countIn) {
-      const m = score.measureAt(opts.startBeat);
+      const m = score.measureAt(from);
       const beatSec = (m.beatLength * 60) / m.bpm / opts.speed;
       countInDur = beatSec * m.beatsPerBar;
       for (let k = 0; k < m.beatsPerBar; k++) this.click(start + k * beatSec, k === 0);
       if (opts.referenceMidi !== null) this.tone(opts.referenceMidi, start, countInDur - 0.08, this.bus, 0.16);
     }
-    this.firstPassAt = start + countInDur;
+    this.firstPassAt = start + countInDur - this.offset;
+    // When resuming, notes already sounding at the resume point play their remainder.
+    for (const it of items.slice(0, this.pointer)) {
+      const left = it.at + it.dur - this.offset;
+      if (it.node && left > 0.05) this.tone(it.midi, start + countInDur, left, it.node, 0.22);
+    }
 
     this.tick();
     this.timer = window.setInterval(() => this.tick(), 30);
@@ -154,9 +166,9 @@ export class Player {
     const o = this.opts;
     if (!o) return { kind: "ended" };
     const elapsed = time - this.firstPassAt;
-    if (elapsed < 0) {
-      const m = this.score.measureAt(o.startBeat);
-      return { kind: "countIn", beatsLeft: Math.ceil(-elapsed / ((m.beatLength * 60) / m.bpm / o.speed)) };
+    if (elapsed < this.offset) {
+      const m = this.score.measureAt(o.resumeBeat ?? o.startBeat);
+      return { kind: "countIn", beatsLeft: Math.ceil((this.offset - elapsed) / ((m.beatLength * 60) / m.bpm / o.speed)) };
     }
     const pass = Math.floor(elapsed / this.passDur);
     if (!o.loop && pass >= 1) return { kind: "ended" };

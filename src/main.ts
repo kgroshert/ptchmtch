@@ -21,6 +21,7 @@ import {
   runsKey,
   TRAINER_KEY,
   TRAINER_VIEW,
+  upsertRow,
   type LoopSession,
   type Run,
   type TrainerSession,
@@ -118,6 +119,10 @@ let playLoop = false;
 /** Vibrato rate of the singer's most recent notes that had one, for judging short notes. */
 let singerRate: number | null = null;
 let playhead: number | null = null;
+/** Where Play continues after a stop (null = from the start of the selection). */
+let resumeBeat: number | null = null;
+/** Date of the loop session recorded for the current practice, so continuing updates it instead of adding another. */
+let loopSessionDate: number | null = null;
 
 const settings = (): Settings => ({
   toleranceCents: prefs.toleranceCents,
@@ -175,6 +180,7 @@ function selectTrack(key: string | null): void {
   results = new Map();
   passMedians = new Map();
   passAccuracies = [];
+  resumeBeat = null;
   singerRate = null;
   current = [];
   previous = [];
@@ -208,6 +214,7 @@ function setRange(from: number, to: number): void {
   range = { from, to };
   passMedians = new Map();
   passAccuracies = [];
+  resumeBeat = null;
   syncRangeInputs();
   drawOverlay();
   const wasPlaying = player?.playing;
@@ -278,23 +285,46 @@ function applyGains(): void {
 
 // --- transport ------------------------------------------------------------
 
-async function play(): Promise<void> {
+/**
+ * Starts playback. `resume` continues where the last stop left off (if it did), keeping the
+ * current run and loop statistics; otherwise playback starts over at the selection.
+ */
+async function play(resume = false): Promise<void> {
   if (!loaded || !track) return;
   const p = getPlayer();
   const { start, end } = rangeBeats();
-  if (current.length) previous = current;
-  current = [];
+  const from = resume && resumeBeat !== null ? resumeBeat : null;
+  resumeBeat = null;
   samplePass = -1;
   pending = track.events.filter((ev) => ev.start >= start - 1e-6 && ev.end <= end + 1e-6);
-  pendingIdx = 0;
-  passResults = new Map();
-  passMedians = new Map();
-  passAccuracies = [];
+  if (from === null) {
+    if (current.length) previous = current;
+    current = [];
+    pendingIdx = 0;
+    passResults = new Map();
+    passMedians = new Map();
+    passAccuracies = [];
+    loopSessionDate = null;
+  } else {
+    // Notes before the resume point were already scored (or skipped) in this pass; the ones
+    // from it on are sung again, so drop what the stop scored for them.
+    pendingIdx = pending.findIndex((ev) => ev.start >= from - 1e-6);
+    if (pendingIdx < 0) pendingIdx = pending.length;
+    current = current.filter((s) => s.beat < from);
+    for (const ev of pending.slice(pendingIdx)) {
+      const r = passResults.get(ev.id);
+      if (!r) continue;
+      if (r.status !== "missed") passMedians.get(ev.id)?.pop();
+      passResults.delete(ev.id);
+    }
+  }
   playLoop = prefs.loop;
   hideToast();
-  const first = track.events.find((ev) => ev.end > start);
+  const first = track.events.find((ev) => ev.end > (from ?? start));
+  playhead = from ?? start;
+  score.setCursorBeat(playhead);
   roll.follow = true;
-  roll.reveal(start);
+  roll.reveal(playhead);
   await p.play({
     tracks: score.tracks.map((t) => ({ key: t.key, events: t.events, gain: trackGain(t.key) })),
     startBeat: start,
@@ -304,6 +334,7 @@ async function play(): Promise<void> {
     countIn: prefs.countIn,
     referenceMidi: prefs.reference && first ? first.midi : null,
     metronome: prefs.metronome,
+    resumeBeat: from ?? undefined,
   });
   setPlayingUI(true);
   document.body.classList.toggle("graph-hidden", prefs.hideGraph);
@@ -313,23 +344,44 @@ async function play(): Promise<void> {
 /** `completed` = the piece (or selection) played to its end rather than being stopped. */
 function stop(completed = false): void {
   if (!player?.playing) return;
+  const at = playhead;
   player.stop();
   finishPass(Infinity);
   if (completed) recordRun();
-  else if (playLoop) {
-    notePassAccuracy(); // counts only if the last pass got far enough
-    recordLoopSession();
-  }
-  playhead = null;
+  else if (playLoop) recordLoopSession();
+  // Play continues from the beat the stop happened in; the playhead stays there.
+  const { end } = rangeBeats();
+  resumeBeat = completed || at === null || beatFloor(at) >= end - 1e-6 ? null : beatFloor(at);
+  playhead = resumeBeat;
   setPlayingUI(false);
   document.body.classList.remove("graph-hidden");
   $("countdown").hidden = true;
   refresh();
 }
 
+/** The start of the beat that `beat` falls in. */
+function beatFloor(beat: number): number {
+  const m = score.measureAt(beat);
+  return m.start + Math.floor((beat - m.start) / m.beatLength + 1e-6) * m.beatLength;
+}
+
+/** Jumps back to the start of the selection, without starting or stopping playback. */
+function backToStart(): void {
+  if (player?.playing) {
+    void play();
+    return;
+  }
+  resumeBeat = null;
+  playhead = null;
+  const { start } = rangeBeats();
+  score.setCursorBeat(start);
+  roll.reveal(start);
+  refresh();
+}
+
 function setPlayingUI(on: boolean): void {
   const b = $("play");
-  b.textContent = on ? "Stop" : "Play";
+  b.textContent = on ? "Pause" : "Play";
 }
 
 function frame(): void {
@@ -344,7 +396,6 @@ function frame(): void {
   if (pos.kind === "countIn") {
     cd.hidden = false;
     cd.textContent = String(pos.beatsLeft);
-    playhead = rangeBeats().start;
   } else {
     cd.hidden = true;
     playhead = pos.beat;
@@ -370,7 +421,8 @@ function onSample(s: PitchSample): void {
     if (samplePass >= 0) {
       finishPass(Infinity);
       recordRun();
-      notePassAccuracy();
+      const acc = passAccuracy();
+      if (acc !== null) passAccuracies.push(acc);
       passResults = new Map();
       previous = current;
       current = [];
@@ -484,13 +536,13 @@ function recordRun(): void {
 }
 
 /**
- * Records the current pass's mean deviation for the loop's best-pass accuracy. Passes in which
- * fewer than 80% of the notes were sung don't count, so a partial pass can't be the best one.
+ * The current pass's mean deviation, for the loop's best-pass accuracy. Passes in which fewer
+ * than 80% of the notes were sung don't count, so a partial pass can't be the best one.
  */
-function notePassAccuracy(): void {
+function passAccuracy(): number | null {
   const sung = [...passResults.values()].filter((r) => r.status !== "missed");
-  if (!pending.length || sung.length < 0.8 * pending.length) return;
-  passAccuracies.push(sung.reduce((a, r) => a + Math.abs(r.cents), 0) / sung.length);
+  if (!pending.length || sung.length < 0.8 * pending.length) return null;
+  return sung.reduce((a, r) => a + Math.abs(r.cents), 0) / sung.length;
 }
 
 /** Stores a loop session (several passes of the same bars) when looping stops. */
@@ -498,14 +550,19 @@ function recordLoopSession(): void {
   if (!track || !tracker?.active) return;
   const p = precision(passMedians);
   if (!p || p.passes < 3) return;
-  const bestPass = passAccuracies.length ? Math.min(...passAccuracies) : null;
+  // The pass in progress counts too, if it got far enough.
+  const accs = [...passAccuracies, passAccuracy()].filter((a): a is number => a !== null);
+  const bestPass = accs.length ? Math.min(...accs) : null;
   const bars = `${score.measures[range.from].number}–${score.measures[range.to].number}`;
   const key = loopsKey(score.fingerprint, track.key);
   const last = loadRows<LoopSession>(key)
-    .filter((s) => s.bars === bars)
+    .filter((s) => s.bars === bars && s.date !== loopSessionDate)
     .pop();
-  addRow<LoopSession>(key, {
-    date: Date.now(),
+  // Continuing after a stop updates this practice's session rather than adding another.
+  const date = loopSessionDate ?? Date.now();
+  loopSessionDate = date;
+  upsertRow<LoopSession>(key, (r) => r.date === date, {
+    date,
     bars,
     passes: p.passes,
     notes: p.notes,
@@ -709,7 +766,8 @@ function bindControls(): void {
     if (f) void loadScore(f, f.name);
   });
 
-  $("play").addEventListener("click", () => (player?.playing ? stop() : void play()));
+  $("play").addEventListener("click", () => (player?.playing ? stop() : void play(true)));
+  $("rewind").addEventListener("click", backToStart);
   $("mic").addEventListener("click", () => void toggleMic());
   $<HTMLSelectElement>("voice").addEventListener("change", (e) => {
     stop();
@@ -847,7 +905,10 @@ function bindControls(): void {
     if (e.code === "Space") {
       e.preventDefault();
       if (player?.playing) stop();
-      else void play();
+      else void play(true);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      backToStart();
     } else if (e.key === "l" || e.key === "L") {
       const box = $<HTMLInputElement>("loop");
       box.checked = !box.checked;

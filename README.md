@@ -14,16 +14,17 @@ Open http://localhost:5173 in Chrome, Edge, Firefox or Safari. The browser only 
 ## Using it
 
 - **Open score…** (or drag a file onto the score area) loads `.musicxml`, `.xml` or compressed `.mxl`. **Load sample** opens a short SATB chorale.
+- **Play / Pause** (Space): Play continues from where you paused, at the start of that beat, and the run or loop statistics carry on. **⏮** (Home) jumps back to the start of the selection without starting or stopping playback. Changing the part or the bars also starts over from the beginning.
 - **Your part** lists every part, and every voice within a part, that contains notes. The selected part is coloured blue in the score.
 - **Your part in playback**: *Loud* to learn the notes, *Normal* to sing with it, *Muted* to test yourself. **Other parts** sets the volume of the accompaniment.
 - **Tempo** slows the playback down (or speeds it up) without changing pitch.
 - **Bars**: click a bar in the score to practise only that bar, and shift-click to extend the selection. You can also drag across the bar numbers above the pitch graph, or type bar numbers. **Loop** repeats the selection.
 - **Loop** is off whenever you open the app.
-- **Hide graph while playing** (G) gives the score the whole window during playback. The graph comes back when playback ends or you press Stop.
+- **Hide graph while playing** (G) gives the score the whole window during playback. The graph comes back when playback ends or you pause.
 - **Count-in** gives one bar of clicks before playback starts; **Starting note** plays your first note during the count-in.
 - **Microphone** (M) turns on pitch detection. The readout next to it works as a tuner even when nothing is playing.
 
-Keyboard: `Space` plays or stops, `L` toggles looping, `M` turns the microphone on or off, `G` toggles hiding the graph.
+Keyboard: `Space` plays or pauses, `Home` jumps back to the start, `L` toggles looping, `M` turns the microphone on or off, `G` toggles hiding the graph.
 
 ### Pitch trainer
 
