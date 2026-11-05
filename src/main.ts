@@ -1,6 +1,7 @@
 import { Calibration } from "./calibration";
 import {
   evaluate,
+  noteWeight,
   precision,
   runScore,
   statusColor,
@@ -511,7 +512,7 @@ function recordRun(): void {
   if (!track || !tracker?.active) return;
   if (range.from !== 0 || range.to !== score.measures.length - 1) return;
   const rs = track.events.map((ev) => passResults.get(ev.id)).filter((r): r is NoteResult => !!r);
-  const s = summarize(rs);
+  const s = summarize(track.events, passResults);
   if (s.sung < track.events.length * 0.3) return; // not really a run-through
   const key = runsKey(score.fingerprint, track.key);
   const before = loadRows<Run>(key);
@@ -522,6 +523,7 @@ function recordRun(): void {
     notes: track.events.length,
     sung: s.sung,
     good: s.good,
+    goodShare: s.goodShare,
     meanAbsCents: s.meanAbsCents,
     meanCents: s.meanCents,
     cleanRate: s.onsets ? s.clean / s.onsets : null,
@@ -550,15 +552,22 @@ function recordRun(): void {
  * than 80% of the notes were sung don't count, so a partial pass can't be the best one.
  */
 function passAccuracy(): number | null {
-  const sung = [...passResults.values()].filter((r) => r.status !== "missed");
-  if (!pending.length || sung.length < 0.8 * pending.length) return null;
-  return sung.reduce((a, r) => a + Math.abs(r.cents), 0) / sung.length;
+  const total = pending.reduce((a, ev) => a + noteWeight(ev), 0);
+  const sung = pending.filter((ev) => passResults.has(ev.id) && passResults.get(ev.id)!.status !== "missed");
+  if (!total || sung.reduce((a, ev) => a + noteWeight(ev), 0) < 0.8 * total) return null;
+  return summarize(sung, passResults).meanAbsCents;
+}
+
+/** Length of a note of the current part, by id, for weighting. */
+function weightOf(id: number): number {
+  const ev = track?.events.find((e) => e.id === id);
+  return ev ? noteWeight(ev) : 0;
 }
 
 /** Stores a loop session (several passes of the same bars) when looping stops. */
 function recordLoopSession(): void {
   if (!track || !tracker?.active) return;
-  const p = precision(passMedians);
+  const p = precision(passMedians, weightOf);
   if (!p || p.passes < 3) return;
   // The pass in progress counts too, if it got far enough.
   const accs = [...passAccuracies, passAccuracy()].filter((a): a is number => a !== null);
@@ -701,14 +710,15 @@ function updateSummary(): void {
       : "Turn on the microphone and press Play to see your pitch here.";
     return;
   }
-  const s = summarize(rs);
+  const s = summarize(inRange, results);
   const bars =
     range.from === range.to
       ? `Bar ${score.measures[range.from].number}`
       : `Bars ${score.measures[range.from].number}–${score.measures[range.to].number}`;
   const tend =
     Math.abs(s.meanCents) < 5 ? "centred" : `${Math.round(Math.abs(s.meanCents))}¢ ${s.meanCents > 0 ? "sharp" : "flat"} on average`;
-  const pitch = `${bars}: ${s.good}/${s.notes} notes within ±${prefs.toleranceCents}¢ · ${s.sung} sung · mean deviation ${Math.round(s.meanAbsCents)}¢ · ${tend}`;
+  // Shares and averages weigh each note by its length.
+  const pitch = `${bars}: ${Math.round(s.goodShare * 100)}% within ±${prefs.toleranceCents}¢ (${s.good}/${s.notes} notes) · ${s.sung} sung · mean deviation ${Math.round(s.meanAbsCents)}¢ · ${tend}`;
 
   let onsets = "Onsets: notes too short to judge";
   if (s.onsets) {
@@ -737,7 +747,7 @@ function updateSummary(): void {
     extra.push(`Vibrato on ${vib.analysed} held notes: ${kinds.join(", ")}${avg}`);
   }
   const inRangeIds = new Set(inRange.map((ev) => ev.id));
-  const p = precision(new Map([...passMedians].filter(([id]) => inRangeIds.has(id))));
+  const p = precision(new Map([...passMedians].filter(([id]) => inRangeIds.has(id))), weightOf);
   if (p) extra.push(`Precision: notes varied ±${p.spread.toFixed(1)}¢ between ${p.passes} passes`);
   const lines = [pitch, onsets];
   if (extra.length) lines.push(extra.join(" · "));

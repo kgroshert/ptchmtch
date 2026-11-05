@@ -157,6 +157,9 @@ export interface Summary {
   notes: number;
   sung: number;
   good: number;
+  /** Share of the notes' total length (in beats) that was sung within tolerance, 0–1. */
+  goodShare: number;
+  /** Means over the sung notes, each note weighted by its length. */
   meanAbsCents: number;
   meanCents: number;
   /** Notes whose attack could be judged. */
@@ -169,9 +172,19 @@ export interface Summary {
   meanSlideMs: number;
 }
 
-export function summarize(results: NoteResult[]): Summary {
-  const sung = results.filter((r) => r.status !== "missed");
-  const n = sung.length || 1;
+/** A note's weight in scores and averages: its length, so a whole note counts as much as four quarters. */
+export const noteWeight = (ev: NoteEvent) => ev.end - ev.start;
+
+/** Summarizes the scored notes among `events`; unscored events are ignored. */
+export function summarize(events: NoteEvent[], resultsById: Map<number, NoteResult>): Summary {
+  const scored = events.filter((ev) => resultsById.has(ev.id));
+  const results = scored.map((ev) => resultsById.get(ev.id)!);
+  const sungEvs = scored.filter((ev) => resultsById.get(ev.id)!.status !== "missed");
+  const sung = sungEvs.map((ev) => resultsById.get(ev.id)!);
+  const total = scored.reduce((a, ev) => a + noteWeight(ev), 0) || 1;
+  const sungLen = sungEvs.reduce((a, ev) => a + noteWeight(ev), 0) || 1;
+  const weighted = (f: (r: NoteResult) => number) =>
+    sungEvs.reduce((a, ev) => a + f(resultsById.get(ev.id)!) * noteWeight(ev), 0) / sungLen;
   const onsets = sung.map((r) => r.onset).filter((o): o is Onset => o !== null);
   const count = (k: OnsetKind) => onsets.filter((o) => o.kind === k).length;
   const slides = onsets.filter((o) => o.kind === "scoop" || o.kind === "fall");
@@ -185,8 +198,9 @@ export function summarize(results: NoteResult[]): Summary {
     notes: results.length,
     sung: sung.length,
     good: sung.filter((r) => r.status === "good").length,
-    meanAbsCents: sung.reduce((a, r) => a + Math.abs(r.cents), 0) / n,
-    meanCents: sung.reduce((a, r) => a + r.cents, 0) / n,
+    goodShare: sungEvs.filter((ev) => resultsById.get(ev.id)!.status === "good").reduce((a, ev) => a + noteWeight(ev), 0) / total,
+    meanAbsCents: weighted((r) => Math.abs(r.cents)),
+    meanCents: weighted((r) => r.cents),
   };
 }
 
@@ -201,10 +215,11 @@ export function noteScore(r: NoteResult | undefined): number {
   return 100 * (0.5 * accuracy + 0.3 * r.inTune + 0.2 * entry);
 }
 
-/** Score for a whole run: the mean note score, with unsung notes counting as 0. */
+/** Score for a whole run: the note scores weighted by note length, with unsung notes counting as 0. */
 export function runScore(events: NoteEvent[], results: Map<number, NoteResult>): number {
-  if (!events.length) return 0;
-  return events.reduce((a, ev) => a + noteScore(results.get(ev.id)), 0) / events.length;
+  const total = events.reduce((a, ev) => a + noteWeight(ev), 0);
+  if (!total) return 0;
+  return events.reduce((a, ev) => a + noteScore(results.get(ev.id)) * noteWeight(ev), 0) / total;
 }
 
 export interface VibratoSummary {
@@ -230,9 +245,9 @@ export interface Precision {
   /** Notes sung in at least two passes. */
   notes: number;
   passes: number;
-  /** Mean standard deviation of a note's median pitch between passes, in cents. */
+  /** Mean standard deviation of a note's median pitch between passes, in cents (weighted by note length). */
   spread: number;
-  /** Mean absolute deviation of each note's average pitch, in cents. */
+  /** Mean absolute deviation of each note's average pitch, in cents (weighted by note length). */
   accuracy: number;
 }
 
@@ -240,19 +255,23 @@ export interface Precision {
  * Precision (how consistently a note comes out the same between repetitions) is a different skill
  * from accuracy (how close it is on average); see Pfordresher et al. 2010.
  */
-export function precision(mediansByNote: Map<number, number[]>): Precision | null {
-  const spreads: number[] = [];
-  const accs: number[] = [];
+export function precision(mediansByNote: Map<number, number[]>, weightOf: (id: number) => number): Precision | null {
+  let notes = 0;
+  let spread = 0;
+  let accuracy = 0;
+  let total = 0;
   let passes = 0;
-  for (const v of mediansByNote.values()) {
+  for (const [id, v] of mediansByNote) {
     passes = Math.max(passes, v.length);
     if (v.length < 2) continue;
     const mean = v.reduce((a, b) => a + b, 0) / v.length;
     const variance = v.reduce((a, b) => a + (b - mean) ** 2, 0) / (v.length - 1);
-    spreads.push(Math.sqrt(variance));
-    accs.push(Math.abs(mean));
+    const w = weightOf(id);
+    spread += Math.sqrt(variance) * w;
+    accuracy += Math.abs(mean) * w;
+    total += w;
+    notes++;
   }
-  if (!spreads.length) return null;
-  const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
-  return { notes: spreads.length, passes, spread: avg(spreads), accuracy: avg(accs) };
+  if (!notes || !total) return null;
+  return { notes, passes, spread: spread / total, accuracy: accuracy / total };
 }

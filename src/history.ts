@@ -9,6 +9,9 @@ export interface Run {
   notes: number;
   sung: number;
   good: number;
+  /** Share of the music (by note length) sung within tolerance; absent in runs recorded before it existed. */
+  goodShare?: number;
+  /** Mean absolute deviation, weighted by note length (by note count in older runs). */
   meanAbsCents: number;
   meanCents: number;
   /** Share of judged onsets that were clean, or null if none could be judged. */
@@ -139,7 +142,7 @@ export const RUN_VIEW: View<Run> = {
   empty: "No complete runs yet. Select all bars, turn on the microphone and sing the piece to the end.",
   metrics: [
     { label: "Score", unit: "", value: (r) => r.score, better: "higher", range: [0, 100] },
-    { label: "Notes in tune", unit: "%", value: (r) => (r.notes ? (r.good / r.notes) * 100 : null), better: "higher", range: [0, 100] },
+    { label: "In tune (by note length)", unit: "%", value: (r) => (r.goodShare != null ? r.goodShare * 100 : r.notes ? (r.good / r.notes) * 100 : null), better: "higher", range: [0, 100] },
     { label: "Mean deviation", unit: "¢", value: (r) => r.meanAbsCents, better: "lower" },
     { label: "Clean onsets", unit: "%", value: (r) => (r.cleanRate == null ? null : r.cleanRate * 100), better: "higher", range: [0, 100] },
     { label: "Vibrato rate", unit: " Hz", value: (r) => r.vibratoRate, band: HEALTHY_RATE, digits: 1 },
@@ -150,7 +153,7 @@ export const RUN_VIEW: View<Run> = {
   columns: [
     { label: "When", cell: (r) => fmtDate(r.date) },
     { label: "Score", cell: (r) => String(Math.round(r.score)), strong: true },
-    { label: "In tune", cell: (r) => `${r.good}/${r.notes} <small>±${r.toleranceCents}¢</small>` },
+    { label: "In tune", cell: (r) => `${r.goodShare != null ? `${pct(r.goodShare)} · ` : ""}${r.good}/${r.notes} notes <small>±${r.toleranceCents}¢</small>` },
     { label: "Mean dev.", cell: (r) => `${Math.round(r.meanAbsCents)}¢` },
     { label: "Tendency", cell: (r) => `${signed(r.meanCents)}¢` },
     { label: "Clean onsets", cell: (r) => pct(r.cleanRate) },

@@ -58,7 +58,7 @@ When you loop a section, each note's pitch is compared across passes. **Precisio
 
 **History** has three tabs. Each one has a chart where you can pick the metric, plus a table. Charts with a typical healthy range show it as a shaded band.
 
-- **Run-throughs**: each time you sing the whole piece to the end with the microphone on. Metrics: score (0–100), notes in tune, mean deviation, clean onsets, vibrato rate, width and regularity, and the share of notes with a wobble. A message after each run compares it with the last one.
+- **Run-throughs**: each time you sing the whole piece to the end with the microphone on. Metrics: score (0–100), share in tune (by note length), mean deviation, clean onsets, vibrato rate, width and regularity, and the share of notes with a wobble. A message after each run compares it with the last one.
 - **Loop practice**: recorded when you stop after at least three passes of a loop. Metrics: accuracy of your best pass (average deviation; passes with fewer than 80% of the notes sung don't count) and spread between passes (precision). The message compares it with your last session on the same bars.
 - **Long notes**: every note practised in the trainer for at least 2 seconds of singing, across all pieces. Metrics: share in tune, longest hold, mean deviation and vibrato.
 
@@ -68,7 +68,7 @@ Each note in a run scores up to 100 points:
 - 30% for the share of the note held within tolerance
 - 20% for a clean entry (half for a slide, none if it never settled)
 
-Notes you didn't sing count as 0. Runs where less than 30% of the notes were sung aren't recorded. History is kept in this browser's local storage, so it survives reloads but not clearing site data, and it isn't shared between browsers or computers.
+The run score weighs each note by its length, so a whole note counts as much as four quarter notes. The same goes for the share in tune, the mean deviation, and loop accuracy and spread. Onsets and vibrato are counted per note. Notes you didn't sing count as 0. Runs where less than 30% of the notes were sung aren't recorded. History is kept in this browser's local storage, so it survives reloads but not clearing site data, and it isn't shared between browsers or computers.
 
 ### Settings
 
