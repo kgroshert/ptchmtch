@@ -70,6 +70,10 @@ Each note in a run scores up to 100 points:
 
 The run score weighs each note by its length, so a whole note counts as much as four quarter notes. The same goes for the share in tune, the mean deviation, and loop accuracy and spread. Onsets and vibrato are counted per note. Notes you didn't sing count as 0. Runs where less than 30% of the notes were sung aren't recorded. History is kept in this browser's local storage, so it survives reloads but not clearing site data, and it isn't shared between browsers or computers.
 
+### What to practise
+
+When several bars are selected, the summary above the pitch graph ends with **Practise:** and up to four bars or ranges that need the most work, most points lost first. A bar counts as weak when its length-weighted note score is below 60 and below the median bar of the selection; weak neighbours are grouped into ranges of up to four bars. Click one to select it with Loop on, then press Play.
+
 ### Take diagnosis
 
 When a result looks wrong, **Diagnose** (above the pitch graph) checks the last take of the selected bars:

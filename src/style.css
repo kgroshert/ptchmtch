@@ -370,6 +370,21 @@ body.graph-hidden .roll-pane {
   color: var(--muted);
 }
 
+.summary .link {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.summary .link:hover {
+  text-decoration-thickness: 2px;
+}
+
 .roll-head .btn {
   flex-shrink: 0;
 }

@@ -222,6 +222,76 @@ export function runScore(events: NoteEvent[], results: Map<number, NoteResult>):
   return events.reduce((a, ev) => a + noteScore(results.get(ev.id)) * noteWeight(ev), 0) / total;
 }
 
+export interface WeakRange {
+  /** Measure indices, inclusive. */
+  from: number;
+  to: number;
+  /** Length-weighted note score of the range, 0–100. */
+  score: number;
+}
+
+/**
+ * The stretches that need the most work: bars whose (length-weighted) note score is below
+ * `threshold` and below the median bar, grouped with weak neighbours into ranges of at most
+ * `maxBars`, most points lost first (so a long weak passage ranks above a single bar). The median keeps ranges focused when most bars are below the threshold.
+ */
+export function weakRanges(
+  events: NoteEvent[],
+  results: Map<number, NoteResult>,
+  { threshold = 60, maxBars = 4, maxRanges = 4 } = {},
+): WeakRange[] {
+  const bars = new Map<number, { sum: number; len: number }>();
+  for (const ev of events) {
+    const r = results.get(ev.id);
+    if (!r) continue;
+    const b = bars.get(ev.measureIndex) ?? { sum: 0, len: 0 };
+    b.sum += noteScore(r) * noteWeight(ev);
+    b.len += noteWeight(ev);
+    bars.set(ev.measureIndex, b);
+  }
+  const scoreOf = (m: number) => {
+    const b = bars.get(m);
+    return b && b.len ? b.sum / b.len : null;
+  };
+  const all = [...bars.keys()].map((m) => scoreOf(m)!).sort((a, b) => a - b);
+  const limit = Math.min(threshold, all[Math.floor(all.length / 2)] ?? threshold);
+  const weak = (m: number) => {
+    const s = scoreOf(m);
+    return s !== null && s < limit;
+  };
+  const covered = new Set<number>();
+  const out: (WeakRange & { lost: number })[] = [];
+  const worstFirst = [...bars.keys()].filter(weak).sort((a, b) => scoreOf(a)! - scoreOf(b)!);
+  for (const m of worstFirst) {
+    if (out.length >= maxRanges) break;
+    if (covered.has(m)) continue;
+    let from = m;
+    let to = m;
+    // Grow towards the weaker neighbour while it is weak and not already listed.
+    while (to - from + 1 < maxBars) {
+      const left = from - 1;
+      const right = to + 1;
+      const canL = weak(left) && !covered.has(left);
+      const canR = weak(right) && !covered.has(right);
+      if (!canL && !canR) break;
+      if (canL && (!canR || scoreOf(left)! <= scoreOf(right)!)) from = left;
+      else to = right;
+    }
+    let sum = 0;
+    let len = 0;
+    for (let i = from; i <= to; i++) {
+      covered.add(i);
+      const b = bars.get(i);
+      if (b) {
+        sum += b.sum;
+        len += b.len;
+      }
+    }
+    out.push({ from, to, score: len ? sum / len : 0, lost: 100 * len - sum });
+  }
+  return out.sort((a, b) => b.lost - a.lost).map(({ from, to, score }) => ({ from, to, score }));
+}
+
 export interface VibratoSummary {
   /** Notes long enough to analyse. */
   analysed: number;

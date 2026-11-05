@@ -8,6 +8,7 @@ import {
   statusColor,
   summarize,
   summarizeVibrato,
+  weakRanges,
   type NoteResult,
   type Settings,
   type TakeSample,
@@ -235,6 +236,7 @@ function setRange(from: number, to: number): void {
     roll.reveal(rangeBeats().start);
   }
   refresh();
+  updateSummary();
   if (wasPlaying) void play();
 }
 
@@ -817,6 +819,36 @@ function updateSummary(): void {
     d.title = line;
     el.append(d);
   }
+
+  // Only worth pointing out within a longer selection.
+  const weak = range.to > range.from ? weakRanges(inRange, results) : [];
+  if (weak.length) {
+    const d = document.createElement("div");
+    d.className = "practise";
+    d.append("Practise: ");
+    weak.forEach((w, i) => {
+      if (i) d.append(" · ");
+      const a = score.measures[w.from].number;
+      const b = score.measures[w.to].number;
+      const btn = document.createElement("button");
+      btn.className = "link";
+      btn.textContent = a === b ? `bar ${a}` : `bars ${a}–${b}`;
+      btn.title = `Score ${Math.round(w.score)} · click to loop ${a === b ? "this bar" : "these bars"}`;
+      btn.addEventListener("click", () => practise(w.from, w.to));
+      d.append(btn);
+    });
+    el.append(d);
+  }
+}
+
+/** Selects bars to work on, with looping on. */
+function practise(from: number, to: number): void {
+  const loop = $<HTMLInputElement>("loop");
+  if (!loop.checked) {
+    loop.checked = true;
+    loop.dispatchEvent(new Event("change"));
+  }
+  setRange(from, to);
 }
 
 // --- controls -------------------------------------------------------------
