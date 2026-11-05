@@ -8,7 +8,9 @@ import {
   statusColor,
   summarize,
   summarizeVibrato,
+  noteScore,
   weakRanges,
+  type WeakRange,
   type NoteResult,
   type Settings,
   type TakeSample,
@@ -54,6 +56,12 @@ interface Prefs {
   onsetMs: number;
   latencyMs: number;
   deviceId: string;
+  /** Show only the staves of the part being practised. */
+  onlyMyPart: boolean;
+  /** Fit the pitch graph's axis to the notes in view. */
+  fitPitch: boolean;
+  /** Height of the pitch graph in px (0 = default). */
+  rollHeight: number;
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -73,6 +81,9 @@ const DEFAULTS: Prefs = {
   onsetMs: 100,
   latencyMs: 0,
   deviceId: "",
+  onlyMyPart: false,
+  fitPitch: true,
+  rollHeight: 0,
 };
 
 function loadPrefs(): Prefs {
@@ -197,9 +208,22 @@ function selectTrack(key: string | null): void {
   singerRate = null;
   current = [];
   previous = [];
-  paintTrack();
+  if (prefs.onlyMyPart) {
+    score.showOnly(track);
+    rerenderScore();
+  } else paintTrack();
   applyGains();
+  loadPractiseList();
   refresh();
+}
+
+/** Lays the score out again (after a size or visibility change) and restores colours and cursor. */
+function rerenderScore(): void {
+  if (!loaded) return;
+  score.render();
+  paintTrack();
+  drawOverlay();
+  score.setCursorBeat(playhead ?? rangeBeats().start);
 }
 
 /** Marks the practice part in the score: blue until sung, then by result. */
@@ -758,6 +782,7 @@ function exportTake(): void {
 
 function updateSummary(): void {
   const el = $("summary");
+  renderPractiseList();
   if (!track) return;
   const { start, end } = rangeBeats();
   const inRange = track.events.filter((ev) => ev.start >= start && ev.end <= end);
@@ -820,8 +845,8 @@ function updateSummary(): void {
     el.append(d);
   }
 
-  // Only worth pointing out within a longer selection.
-  const weak = range.to > range.from ? weakRanges(inRange, results) : [];
+  // Only worth pointing out within a selection longer than a practise range (up to four bars).
+  const weak = range.to - range.from >= 4 ? weakRanges(inRange, results) : [];
   if (weak.length) {
     const d = document.createElement("div");
     d.className = "practise";
@@ -834,11 +859,118 @@ function updateSummary(): void {
       btn.className = "link";
       btn.textContent = a === b ? `bar ${a}` : `bars ${a}–${b}`;
       btn.title = `Score ${Math.round(w.score)} · click to loop ${a === b ? "this bar" : "these bars"}`;
-      btn.addEventListener("click", () => practise(w.from, w.to));
+      btn.addEventListener("click", () => {
+        // Keep all current suggestions at hand while practising one of them.
+        setPractiseList(weak);
+        practise(w.from, w.to);
+      });
       d.append(btn);
     });
     el.append(d);
   }
+}
+
+// --- practise list ------------------------------------------------------------
+
+/** Bars to work on, kept in the side list while practising (stored per piece and part). */
+let practiseList: WeakRange[] = [];
+const practiseKey = () => (track ? `ptchmtch.practise.${score.fingerprint}.${track.key}` : null);
+
+function loadPractiseList(): void {
+  const key = practiseKey();
+  practiseList = key ? loadRows<WeakRange>(key) : [];
+  renderPractiseList();
+}
+
+function setPractiseList(list: WeakRange[]): void {
+  practiseList = list;
+  const key = practiseKey();
+  if (key) {
+    try {
+      if (list.length) localStorage.setItem(key, JSON.stringify(list));
+      else localStorage.removeItem(key);
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  renderPractiseList();
+}
+
+/** Length-weighted note score of the scored notes in measures from..to, or null if none was sung yet. */
+function rangeScore(from: number, to: number): number | null {
+  let sum = 0;
+  let len = 0;
+  for (const ev of track?.events ?? []) {
+    if (ev.measureIndex < from || ev.measureIndex > to) continue;
+    const r = results.get(ev.id);
+    if (!r) continue;
+    sum += noteScore(r) * noteWeight(ev);
+    len += noteWeight(ev);
+  }
+  return len ? sum / len : null;
+}
+
+function renderPractiseList(): void {
+  const aside = $("practiseList");
+  const ul = $("practiseItems");
+  const valid = practiseList.filter((w) => w.to < score.measures.length);
+  aside.hidden = !valid.length;
+  ul.innerHTML = "";
+  for (const w of valid) {
+    const a = score.measures[w.from].number;
+    const b = score.measures[w.to].number;
+    const now = rangeScore(w.from, w.to);
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.classList.toggle("active", range.from === w.from && range.to === w.to);
+    const label = document.createElement("span");
+    label.textContent = a === b ? `Bar ${a}` : `Bars ${a}–${b}`;
+    const scores = document.createElement("span");
+    scores.className = "scores";
+    scores.innerHTML = `${Math.round(w.score)}` + (now !== null && Math.round(now) !== Math.round(w.score) ? ` → <b>${Math.round(now)}</b>` : "");
+    btn.title = `Loop ${a === b ? "this bar" : "these bars"}`;
+    btn.append(label, scores);
+    btn.addEventListener("click", () => practise(w.from, w.to));
+    li.append(btn);
+    ul.append(li);
+  }
+}
+
+/** Drag handle between the score and the pitch graph. */
+function bindSplitter(): void {
+  const main = document.querySelector("main")!;
+  const handle = $("splitter");
+  const apply = () => {
+    if (prefs.rollHeight) main.style.setProperty("--roll-h", `${prefs.rollHeight}px`);
+    else main.style.removeProperty("--roll-h");
+  };
+  apply();
+  handle.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add("dragging");
+    const move = (ev: PointerEvent) => {
+      const r = main.getBoundingClientRect();
+      // Keep at least 120 px of score and 160 px of graph.
+      const h = Math.round(Math.max(160, Math.min(r.height - 140, r.bottom - ev.clientY - 12)));
+      prefs.rollHeight = h;
+      apply();
+    };
+    const up = () => {
+      handle.classList.remove("dragging");
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      savePrefs();
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+  });
+  // Double-click returns to the default height.
+  handle.addEventListener("dblclick", () => {
+    prefs.rollHeight = 0;
+    apply();
+    savePrefs();
+  });
 }
 
 /** Selects bars to work on, with looping on. */
@@ -1050,17 +1182,43 @@ function bindControls(): void {
     }
   });
 
+  // Re-layout when the score pane changes width (window resize, practise list shown or hidden).
   let resizeTimer = 0;
-  window.addEventListener("resize", () => {
+  let paneWidth = scorePane.clientWidth;
+  new ResizeObserver(() => {
+    if (scorePane.clientWidth === paneWidth) return;
+    paneWidth = scorePane.clientWidth;
     clearTimeout(resizeTimer);
-    resizeTimer = window.setTimeout(() => {
-      if (!loaded) return;
-      score.render();
-      paintTrack();
-      drawOverlay();
-      score.setCursorBeat(playhead ?? rangeBeats().start);
-    }, 250);
+    resizeTimer = window.setTimeout(rerenderScore, 250);
+  }).observe(scorePane);
+
+  const only = $<HTMLInputElement>("onlyMyPart");
+  only.checked = prefs.onlyMyPart;
+  only.addEventListener("change", () => {
+    prefs.onlyMyPart = only.checked;
+    savePrefs();
+    score.showOnly(prefs.onlyMyPart ? track : null);
+    rerenderScore();
   });
+
+  const fit = $("fitPitch");
+  const showFit = () => {
+    fit.setAttribute("aria-pressed", String(prefs.fitPitch));
+    fit.classList.toggle("on", prefs.fitPitch);
+    roll.fitPitch = prefs.fitPitch;
+  };
+  showFit();
+  fit.addEventListener("click", () => {
+    prefs.fitPitch = !prefs.fitPitch;
+    savePrefs();
+    showFit();
+    refresh();
+  });
+
+  bindSplitter();
+
+  $("practiseClose").addEventListener("click", () => setPractiseList([]));
+  $("practiseAll").addEventListener("click", () => setRange(0, score.measures.length - 1));
 }
 
 const reportedLatencyMs = () => ((player?.outputLatency ?? 0) + (tracker?.inputLatency ?? 0)) * 1000;

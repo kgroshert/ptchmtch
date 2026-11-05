@@ -26,6 +26,8 @@ export class PitchRoll {
   viewStart = 0;
   /** Keep the playhead in view while playing. */
   follow = true;
+  /** Fit the pitch axis to the notes in view (taller rows) instead of the part's whole range. */
+  fitPitch = true;
   onRangeSelect: (fromMeasure: number, toMeasure: number) => void = () => {};
   onNoteDblClick: (ev: NoteEvent) => void = () => {};
 
@@ -102,7 +104,18 @@ export class PitchRoll {
     const t = this.model?.track;
     let lo = t ? t.minMidi - 4 : 55;
     let hi = t ? t.maxMidi + 4 : 79;
-    while (hi - lo < 16) {
+    let min = 16;
+    if (this.fitPitch && t) {
+      const b0 = this.viewStart;
+      const b1 = this.xToBeat(this.w);
+      const shown = t.events.filter((ev) => ev.end > b0 && ev.start < b1);
+      if (shown.length) {
+        lo = Math.min(...shown.map((ev) => ev.midi)) - 2;
+        hi = Math.max(...shown.map((ev) => ev.midi)) + 2;
+        min = 12; // at least an octave, so the scale doesn't jump around too much
+      }
+    }
+    while (hi - lo < min) {
       lo--;
       hi++;
     }
@@ -197,7 +210,8 @@ export class PitchRoll {
       ctx.fillRect(x, y - tolH / 2, wd, tolH);
       ctx.globalAlpha = 1;
       ctx.fillStyle = col;
-      ctx.fillRect(x, y - 1, wd, 2);
+      const lineH = Math.max(2, Math.min(4, rowH / 7));
+      ctx.fillRect(x, y - lineH / 2, wd, lineH);
       const kind = res?.onset?.kind;
       if (kind === "scoop" || kind === "fall") {
         // Small ramp into the start of the bar, from the side the singer came from.
@@ -218,8 +232,10 @@ export class PitchRoll {
     }
 
     // Sung pitch
-    this.paintTake(m.previous, () => v("--take-prev"), yOf, 1.5);
-    this.paintTake(m.current, (c) => (c === null ? v("--take-free") : statusColor(this.classify(c))), yOf, 2.5);
+    // Line widths grow with the rows, so the trace stays easy to read against the note.
+    const trace = Math.max(2.5, Math.min(5, rowH / 5));
+    this.paintTake(m.previous, () => v("--take-prev"), yOf, trace * 0.6);
+    this.paintTake(m.current, (c) => (c === null ? v("--take-free") : statusColor(this.classify(c))), yOf, trace);
 
     // Playhead
     if (m.playhead !== null) {
@@ -254,6 +270,7 @@ export class PitchRoll {
     yOf: (midi: number) => number,
     width: number,
   ): void {
+    const maxJump = Math.abs(yOf(0) - yOf(6)); // don't join points more than a tritone apart
     if (!samples.length) return;
     const { ctx } = this;
     const m = this.model!;
@@ -278,7 +295,7 @@ export class PitchRoll {
       }
       const x = this.beatToX(s.beat);
       const y = yOf(shown);
-      if (prev && s.beat - prev.beat < 0.25 && Math.abs(y - prev.y) < 80) {
+      if (prev && s.beat - prev.beat < 0.25 && Math.abs(y - prev.y) < maxJump) {
         ctx.strokeStyle = color(cents);
         ctx.beginPath();
         ctx.moveTo(prev.x, prev.y);

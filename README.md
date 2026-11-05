@@ -20,6 +20,8 @@ Open http://localhost:5173 in Chrome, Edge, Firefox or Safari. The browser only 
 - **Tempo** slows the playback down (or speeds it up) without changing pitch.
 - **Bars**: click a bar in the score to practise only that bar, and shift-click to extend the selection. You can also drag across the bar numbers above the pitch graph, or type bar numbers. **Loop** repeats the selection.
 - **Loop** is off whenever you open the app.
+- **Only my part** hides the other parts' staves in the score, for more room. For a voice inside a piano part, only the staff it is written on is kept.
+- **Pitch graph**: drag the handle between the score and the graph to make the graph taller (double-click it to reset). **↕ Fit** fits the pitch axis to the notes in view, for taller rows and thicker lines; switch it off to see the part's whole range.
 - **Hide graph while playing** (G) gives the score the whole window during playback. The graph comes back when playback ends or you pause.
 - **Count-in** gives one bar of clicks before playback starts; **Starting note** plays your first note during the count-in.
 - **Microphone** (M) turns on pitch detection. The readout next to it works as a tuner even when nothing is playing.
@@ -72,7 +74,7 @@ The run score weighs each note by its length, so a whole note counts as much as 
 
 ### What to practise
 
-When several bars are selected, the summary above the pitch graph ends with **Practise:** and up to four bars or ranges that need the most work, most points lost first. A bar counts as weak when its length-weighted note score is below 60 and below the median bar of the selection; weak neighbours are grouped into ranges of up to four bars. Click one to select it with Loop on, then press Play.
+When several bars are selected, the summary above the pitch graph ends with **Practise:** and up to four bars or ranges that need the most work, most points lost first. A bar counts as weak when its length-weighted note score is below 60 and below the median bar of the selection; weak neighbours are grouped into ranges of up to four bars. Click one to select it with Loop on, then press Play. All suggestions then move to the **Practise** list on the right, so they stay at hand while you practise one of them. Each entry shows its score when it was listed and, once you've sung it again, its current score. **All bars** returns to the whole piece; **×** closes the list. The list is kept per piece and part.
 
 ### Take diagnosis
 

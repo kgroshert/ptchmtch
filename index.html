@@ -74,6 +74,9 @@
           <label title="More room for the score; the graph comes back when playback ends (G)"
             ><input id="hideGraph" type="checkbox" /> Hide graph while playing</label
           >
+          <label title="Hide the other parts' staves in the score, for more room"
+            ><input id="onlyMyPart" type="checkbox" /> Only my part</label
+          >
         </div>
       </div>
     </header>
@@ -88,6 +91,8 @@
         </div>
       </section>
 
+      <div id="splitter" class="splitter" role="separator" aria-orientation="horizontal" title="Drag to resize the pitch graph"></div>
+
       <section class="roll-pane">
         <div class="roll-head">
           <span id="summary" class="summary">Sing along with the microphone on to see your pitch here.</span>
@@ -96,6 +101,7 @@
             <i class="sw prev"></i>previous take
           </span>
           <span class="spacer"></span>
+          <button id="fitPitch" class="btn ghost small" title="Fit the pitch axis to the notes in view (taller rows), or show the part's whole range" aria-pressed="true">↕ Fit</button>
           <button id="diagnoseBtn" class="btn ghost small" title="Look for timing, octave and other problems in the last take" disabled>Diagnose</button>
           <button id="zoomOut" class="btn ghost small" title="Zoom out">−</button>
           <button id="zoomIn" class="btn ghost small" title="Zoom in">+</button>
@@ -105,6 +111,15 @@
           <div id="tip" class="tip" hidden></div>
         </div>
       </section>
+      <aside id="practiseList" class="practise-list" hidden>
+        <div class="practise-head">
+          <h3>Practise</h3>
+          <button id="practiseClose" class="btn ghost small" title="Close the list" aria-label="Close the list">×</button>
+        </div>
+        <ul id="practiseItems"></ul>
+        <button id="practiseAll" class="btn ghost small">All bars</button>
+        <p class="muted">Score when listed → after practice.</p>
+      </aside>
       <div id="countdown" class="countdown" hidden></div>
       <div id="toast" class="toast" hidden></div>
     </main>

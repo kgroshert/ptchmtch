@@ -269,16 +269,134 @@ input[type="checkbox"] {
 main {
   position: relative;
   display: grid;
-  grid-template-rows: 1fr minmax(220px, 34vh);
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(120px, 1fr) auto var(--roll-h, minmax(260px, 40vh));
   min-height: 0;
+}
+
+main > .score-pane,
+main > .splitter,
+main > .roll-pane {
+  grid-column: 1;
 }
 
 body.graph-hidden main {
   grid-template-rows: 1fr;
 }
 
-body.graph-hidden .roll-pane {
+body.graph-hidden .roll-pane,
+body.graph-hidden .splitter {
   display: none;
+}
+
+/* Drag handle between the score and the pitch graph. */
+.splitter {
+  height: 10px;
+  margin: 0 14px;
+  cursor: row-resize;
+  position: relative;
+  touch-action: none;
+}
+
+.splitter::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  width: 44px;
+  height: 3px;
+  margin-left: -22px;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.splitter:hover::after,
+.splitter.dragging::after {
+  background: var(--accent);
+}
+
+/* ---- practise list ---- */
+
+.practise-list {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  width: 190px;
+  margin: 10px 14px 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  overflow: auto;
+  font-size: 13px;
+}
+
+.practise-list[hidden] {
+  display: none;
+}
+
+.practise-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.practise-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.practise-list ul {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.practise-list li button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.practise-list li button:hover {
+  border-color: var(--accent);
+}
+
+.practise-list li button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.practise-list .scores {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.practise-list .scores b {
+  color: var(--fg);
+}
+
+.practise-list p {
+  margin: 0;
+  font-size: 12px;
+}
+
+@media (max-width: 700px) {
+  .practise-list {
+    display: none;
+  }
 }
 
 .muted {
@@ -343,7 +461,7 @@ body.graph-hidden .roll-pane {
 .roll-pane {
   display: grid;
   grid-template-rows: auto 1fr;
-  margin: 10px 14px 12px;
+  margin: 0 14px 12px;
   min-height: 0;
 }
 
@@ -784,4 +902,9 @@ dialog.calibration .actions {
   font-size: 13px;
   color: var(--muted);
   min-height: 2.6em;
+}
+
+.roll-head .btn.on {
+  color: var(--accent);
+  border-color: var(--accent);
 }

@@ -114,6 +114,23 @@ export class Score {
     }
   }
 
+  /**
+   * Shows only the staves that `track`'s notes are on (null shows everything). Takes effect on the
+   * next render().
+   */
+  showOnly(track: Track | null): void {
+    const keep = new Set<unknown>();
+    for (const ev of track?.events ?? []) for (const n of ev.notes) keep.add(n.ParentStaffEntry?.ParentStaff);
+    for (const inst of this.osmd.Sheet.Instruments) {
+      let any = false;
+      for (const staff of inst.Staves) {
+        staff.Visible = !track || keep.has(staff);
+        any ||= staff.Visible;
+      }
+      inst.Visible = any;
+    }
+  }
+
   /** (Re-)lays out the score. Any notehead colouring must be re-applied afterwards. */
   render(): void {
     this.osmd.render();
