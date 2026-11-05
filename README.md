@@ -70,6 +70,17 @@ Each note in a run scores up to 100 points:
 
 The run score weighs each note by its length, so a whole note counts as much as four quarter notes. The same goes for the share in tune, the mean deviation, and loop accuracy and spread. Onsets and vibrato are counted per note. Notes you didn't sing count as 0. Runs where less than 30% of the notes were sung aren't recorded. History is kept in this browser's local storage, so it survives reloads but not clearing site data, and it isn't shared between browsers or computers.
 
+### Take diagnosis
+
+When a result looks wrong, **Diagnose** (above the pitch graph) checks the last take of the selected bars:
+
+- **Timing**: shifts your pitch line up to ±400 ms against the score and finds where it fits best. If a shift helps a lot, you sang consistently early or late, or the latency setting is off, and it suggests a latency correction.
+- **Octave**: lists notes sung, or detected, about an octave away from the target, and shows the mean deviation without them.
+- **Typical deviation**: compares the median with the mean, so you can tell whether a few far-off notes pull the result down.
+- **Furthest off**: the notes with the largest deviation, with what was sung, the onset and the note length.
+
+**Export take…** saves the take (notes, results, settings and every pitch sample) as a JSON file, for example to report a scoring problem.
+
 ### Settings
 
 - **Tolerance**: ±10 to ±50 cents.
@@ -104,6 +115,7 @@ Calibrate again whenever you change headphones or microphone.
 | `src/trainer.ts` | Single-note pitch trainer. |
 | `src/calibration.ts` | Latency calibration: plays the beats, detects syllable onsets, computes the correction. |
 | `src/vibrato.ts` | Vibrato rate, width, regularity and classification; vibrato centre line. |
+| `src/diagnosis.ts` | Take diagnosis: timing fit, octave slips, worst notes. |
 | `src/history.ts` | Stores runs, loop sessions and trainer sessions in local storage; charts and tables. |
 | `src/main.ts` | UI wiring and state. |
 

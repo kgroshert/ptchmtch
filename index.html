@@ -96,6 +96,7 @@
             <i class="sw prev"></i>previous take
           </span>
           <span class="spacer"></span>
+          <button id="diagnoseBtn" class="btn ghost small" title="Look for timing, octave and other problems in the last take" disabled>Diagnose</button>
           <button id="zoomOut" class="btn ghost small" title="Zoom out">−</button>
           <button id="zoomIn" class="btn ghost small" title="Zoom in">+</button>
         </div>
@@ -151,6 +152,17 @@
         <button id="historyClear" class="btn ghost">Clear history</button>
         <span class="spacer"></span>
         <button id="historyClose" class="btn primary">Close</button>
+      </div>
+    </dialog>
+
+    <dialog id="diagnosis" class="history diagnosis">
+      <h2>Take diagnosis</h2>
+      <p id="diagnosisFor" class="muted"></p>
+      <div id="diagnosisBody"></div>
+      <div class="actions">
+        <button id="diagnosisExport" class="btn ghost" title="Save the take as a file, e.g. to report a scoring problem">Export take…</button>
+        <span class="spacer"></span>
+        <button id="diagnosisClose" class="btn primary">Close</button>
       </div>
     </dialog>
 

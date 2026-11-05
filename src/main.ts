@@ -1,4 +1,5 @@
 import { Calibration } from "./calibration";
+import { diagnose, renderDiagnosis } from "./diagnosis";
 import {
   evaluate,
   noteWeight,
@@ -697,12 +698,69 @@ function refresh(): void {
   });
 }
 
+// --- diagnosis --------------------------------------------------------------
+
+/** The most recent take: the pass in progress or just finished, else the one before. */
+const lastTake = () => (current.length ? current : previous);
+
+function selectionEvents(): NoteEvent[] {
+  if (!track) return [];
+  const { start, end } = rangeBeats();
+  return track.events.filter((ev) => ev.start >= start && ev.end <= end);
+}
+
+function openDiagnosis(): void {
+  if (!track) return;
+  stop();
+  const d = diagnose(selectionEvents(), lastTake(), results, settings(), (ev) => score.measures[ev.measureIndex].number);
+  const bars = `${score.measures[range.from].number}–${score.measures[range.to].number}`;
+  $("diagnosisFor").textContent = `${track.label} · ${score.title} · bars ${bars} · last take`;
+  renderDiagnosis($("diagnosisBody"), d, prefs.latencyMs);
+  $<HTMLDialogElement>("diagnosis").showModal();
+}
+
+/** Saves everything needed to re-run the analysis elsewhere. */
+function exportTake(): void {
+  if (!track) return;
+  const events = selectionEvents();
+  const data = {
+    app: "ptchmtch",
+    version: 1,
+    exported: new Date().toISOString(),
+    piece: { title: score.title, fingerprint: score.fingerprint },
+    part: { key: track.key, label: track.label },
+    bars: { from: score.measures[range.from].number, to: score.measures[range.to].number },
+    settings: settings(),
+    playback: { speed: prefs.speed, latencyMs: prefs.latencyMs, ignoreOctaveShifts: prefs.ignoreOctaveShifts },
+    latency: { outputMs: (player?.outputLatency ?? 0) * 1000, inputMs: (tracker?.inputLatency ?? 0) * 1000 },
+    events: events.map((ev) => ({
+      id: ev.id,
+      bar: score.measures[ev.measureIndex].number,
+      midi: ev.midi,
+      start: ev.start,
+      end: ev.end,
+      startSec: score.beatToSec(ev.start),
+    })),
+    results: events.filter((ev) => results.has(ev.id)).map((ev) => ({ id: ev.id, ...results.get(ev.id)! })),
+    samples: lastTake().map((x) => [+x.beat.toFixed(4), +x.time.toFixed(4), x.midi === null ? null : +x.midi.toFixed(3)]),
+    sampleFormat: ["beat", "time", "midi"],
+  };
+  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  const slug = score.title.replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "take";
+  a.download = `ptchmtch-${slug}-bars-${data.bars.from}-${data.bars.to}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
 function updateSummary(): void {
   const el = $("summary");
   if (!track) return;
   const { start, end } = rangeBeats();
   const inRange = track.events.filter((ev) => ev.start >= start && ev.end <= end);
   const rs = inRange.map((ev) => results.get(ev.id)).filter((r): r is NoteResult => !!r);
+  $<HTMLButtonElement>("diagnoseBtn").disabled = !rs.length;
   if (!rs.length) {
     el.innerHTML = "";
     el.textContent = tracker?.active
@@ -853,6 +911,9 @@ function bindControls(): void {
   $("all").addEventListener("click", () => setRange(0, score.measures.length - 1));
 
   $("historyBtn").addEventListener("click", openHistory);
+  $("diagnoseBtn").addEventListener("click", openDiagnosis);
+  $("diagnosisExport").addEventListener("click", exportTake);
+  $("diagnosisClose").addEventListener("click", () => $<HTMLDialogElement>("diagnosis").close());
   $("historyClose").addEventListener("click", () => $<HTMLDialogElement>("history").close());
   for (const b of $("historyTabs").querySelectorAll<HTMLButtonElement>("button"))
     b.addEventListener("click", () => {

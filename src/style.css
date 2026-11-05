@@ -689,6 +689,23 @@ dialog.history .actions {
   margin-top: 12px;
 }
 
+/* ---- diagnosis ---- */
+
+#diagnosisBody {
+  max-height: 64vh;
+  overflow: auto;
+}
+
+#diagnosisBody h3 {
+  margin: 14px 0 4px;
+  font-size: 14px;
+}
+
+#diagnosisBody p {
+  margin: 0 0 8px;
+  line-height: 1.45;
+}
+
 /* ---- calibration ---- */
 
 dialog.calibration {
