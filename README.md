@@ -21,7 +21,7 @@ Open http://localhost:5173 in Chrome, Edge, Firefox or Safari. The browser only 
 - **Bars**: click a bar in the score to practise only that bar, and shift-click to extend the selection. You can also drag across the bar numbers above the pitch graph, or type bar numbers. **Loop** repeats the selection.
 - **Loop** is off whenever you open the app.
 - **Only my part** hides the other parts' staves in the score, for more room. For a voice inside a piano part, only the staff it is written on is kept.
-- **Pitch graph**: drag the handle between the score and the graph to make the graph taller (double-click it to reset). **↕ Fit** fits the pitch axis to the notes in view, for taller rows and thicker lines; switch it off to see the part's whole range.
+- **Pitch graph**: drag the handle between the score and the graph to make the graph taller (double-click it to reset). **↕ Fit** fits the pitch axis to the notes in view, for taller rows and thicker lines; switch it off to see the part's whole range. The mouse wheel scrolls in time and ⌘/Ctrl + wheel zooms in time. To zoom the pitch axis, use the wheel over the note names, or ⌥/Alt + wheel anywhere; drag the note names to move up or down, and double-click them to reset.
 - **Hide graph while playing** (G) gives the score the whole window during playback. The graph comes back when playback ends or you pause.
 - **Count-in** gives one bar of clicks before playback starts; **Starting note** plays your first note during the count-in.
 - **Microphone** (M) turns on pitch detection. The readout next to it works as a tuner even when nothing is playing.
@@ -72,7 +72,14 @@ Each note in a run scores up to 100 points:
 
 The run score weighs each note by its length, so a whole note counts as much as four quarter notes. The same goes for the share in tune, the mean deviation, and loop accuracy and spread. Onsets and vibrato are counted per note. Notes you didn't sing count as 0. Runs where less than 30% of the notes were sung aren't recorded. History is kept in this browser's local storage, so it survives reloads but not clearing site data, and it isn't shared between browsers or computers.
 
-### What to practise
+### Recording on the pitch graph
+
+**Load recording…** (above the pitch graph) shows the pitch of an audio file (mp3, m4a, wav and so on), such as a singer's version of your part, on the graph instead of your own takes:
+
+- The pitch is found with the same method as for the microphone. A solo voice works best; with accompaniment, only the loudest line is followed.
+- **Auto-align** finds where the score starts in the file, the recording's tempo relative to the notated tempo, and its key. The line is folded into your part's octave, so a different voice type still lines up. **Starts at**, **Tempo** and **Transpose** fine-tune the result. Alignment assumes a steady tempo; if the singer takes a lot of liberties, adjust **Starts at** for the passage you're practising.
+- **Clear** removes it and brings your takes back.
+
 
 When several bars are selected, the summary above the pitch graph ends with **Practise:** and up to four bars or ranges that need the most work, most points lost first. A bar counts as weak when its length-weighted note score is below 60 and below the median bar of the selection; weak neighbours are grouped into ranges of up to four bars. Click one to select it with Loop on, then press Play. All suggestions then move to the **Practise** list on the right, so they stay at hand while you practise one of them. Each entry shows its score when it was listed and, once you've sung it again, its current score. **All bars** returns to the whole piece; **×** closes the list. The list is kept per piece and part.
 
@@ -122,6 +129,7 @@ Calibrate again whenever you change headphones or microphone.
 | `src/calibration.ts` | Latency calibration: plays the beats, detects syllable onsets, computes the correction. |
 | `src/vibrato.ts` | Vibrato rate, width, regularity and classification; vibrato centre line. |
 | `src/diagnosis.ts` | Take diagnosis: timing fit, octave slips, worst notes. |
+| `src/recording.ts` | Pitch tracking of audio files and their alignment to the score. |
 | `src/history.ts` | Stores runs, loop sessions and trainer sessions in local storage; charts and tables. |
 | `src/main.ts` | UI wiring and state. |
 

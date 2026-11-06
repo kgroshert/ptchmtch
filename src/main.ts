@@ -1,5 +1,6 @@
 import { Calibration } from "./calibration";
 import { diagnose, renderDiagnosis } from "./diagnosis";
+import { alignRecording, analyseRecording, toBeats, type Alignment, type Recording } from "./recording";
 import {
   evaluate,
   noteWeight,
@@ -171,6 +172,7 @@ async function loadScore(content: string | Blob, name: string): Promise<void> {
     return;
   }
   loaded = true;
+  clearRecording(); // it was lined up with the previous piece
   scorePane.classList.add("has-score");
   $("title").textContent = score.title;
   document.title = `${score.title} · ptchmtch`;
@@ -214,6 +216,7 @@ function selectTrack(key: string | null): void {
   } else paintTrack();
   applyGains();
   loadPractiseList();
+  if (recording) showRecording(); // folds the recording into the new part's octaves
   refresh();
 }
 
@@ -720,6 +723,7 @@ function refresh(): void {
     previous,
     results,
     repeats: passMedians,
+    reference,
     settings: settings(),
   });
 }
@@ -868,6 +872,105 @@ function updateSummary(): void {
     });
     el.append(d);
   }
+}
+
+// --- recording ----------------------------------------------------------------
+
+/** A loaded audio recording, shown on the pitch graph instead of the sung takes. */
+let recording: Recording | null = null;
+let alignment: Alignment | null = null;
+let reference: TakeSample[] | null = null;
+
+async function loadRecording(file: File): Promise<void> {
+  if (!loaded || !track) return;
+  clearRecording();
+  $("recBar").hidden = false;
+  $("recName").textContent = file.name;
+  const status = $("recStatus");
+  setRecInputs(null);
+  try {
+    status.textContent = "Reading…";
+    const rec = await analyseRecording(file, file.name, getPlayer().ctx, (share) => {
+      status.textContent = `Finding pitch… ${Math.round(share * 100)}%`;
+    });
+    const voiced = rec.points.filter((m) => m !== null).length / Math.max(1, rec.points.length);
+    if (voiced < 0.05) {
+      status.textContent = "No clear pitch found in this recording.";
+      return;
+    }
+    status.textContent = "Lining up with the score…";
+    recording = rec;
+    alignment = await alignRecording(rec, track.events, score);
+    showRecording();
+    status.textContent = `${fmtDuration(rec.duration)} · pitch found in ${Math.round(voiced * 100)}%`;
+  } catch (err) {
+    console.error(err);
+    status.textContent = `Could not read this file: ${(err as Error).message ?? err}`;
+  }
+}
+
+function fmtDuration(sec: number): string {
+  const m = Math.floor(sec / 60);
+  return `${m}:${String(Math.round(sec - m * 60)).padStart(2, "0")}`;
+}
+
+function setRecInputs(a: Alignment | null): void {
+  const off = $<HTMLInputElement>("recOffset");
+  const rate = $<HTMLInputElement>("recRate");
+  const tr = $<HTMLInputElement>("recTranspose");
+  for (const el of [off, rate, tr, $<HTMLButtonElement>("recAlign")]) el.disabled = !a;
+  off.value = a ? a.offset.toFixed(2) : "";
+  rate.value = a ? (a.rate * 100).toFixed(1) : "";
+  tr.value = a ? String(a.transpose) : "";
+}
+
+/** (Re)maps the recording onto the score's beats with the current alignment and part. */
+function showRecording(): void {
+  reference = recording && alignment && track ? toBeats(recording, alignment, track.events, score) : null;
+  setRecInputs(reference ? alignment : null);
+  const legend = $("legend");
+  legend.querySelector<HTMLElement>(".takes")!.hidden = !!reference;
+  legend.querySelector<HTMLElement>(".ref")!.hidden = !reference;
+  refresh();
+}
+
+function clearRecording(): void {
+  recording = null;
+  alignment = null;
+  reference = null;
+  $("recBar").hidden = true;
+  showRecording();
+}
+
+function bindRecording(): void {
+  const file = $<HTMLInputElement>("recFile");
+  $("recLoad").addEventListener("click", () => file.click());
+  file.addEventListener("change", () => {
+    const f = file.files?.[0];
+    file.value = "";
+    if (f) void loadRecording(f);
+  });
+  $("recClear").addEventListener("click", clearRecording);
+  $("recAlign").addEventListener("click", async () => {
+    if (!recording || !track) return;
+    $("recStatus").textContent = "Lining up with the score…";
+    alignment = await alignRecording(recording, track.events, score);
+    $("recStatus").textContent = "";
+    showRecording();
+  });
+  const onEdit = () => {
+    if (!alignment) return;
+    const offset = parseFloat($<HTMLInputElement>("recOffset").value);
+    const rate = parseFloat($<HTMLInputElement>("recRate").value) / 100;
+    const transpose = Math.round(parseFloat($<HTMLInputElement>("recTranspose").value));
+    alignment = {
+      offset: Number.isFinite(offset) ? offset : alignment.offset,
+      rate: Number.isFinite(rate) && rate > 0.2 ? rate : alignment.rate,
+      transpose: Number.isFinite(transpose) ? transpose : alignment.transpose,
+    };
+    showRecording();
+  };
+  for (const id of ["recOffset", "recRate", "recTranspose"]) $(id).addEventListener("input", onEdit);
 }
 
 // --- practise list ------------------------------------------------------------
@@ -1212,10 +1315,12 @@ function bindControls(): void {
     prefs.fitPitch = !prefs.fitPitch;
     savePrefs();
     showFit();
+    roll.resetPitchZoom();
     refresh();
   });
 
   bindSplitter();
+  bindRecording();
 
   $("practiseClose").addEventListener("click", () => setPractiseList([]));
   $("practiseAll").addEventListener("click", () => setRange(0, score.measures.length - 1));

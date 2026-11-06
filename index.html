@@ -96,15 +96,27 @@
       <section class="roll-pane">
         <div class="roll-head">
           <span id="summary" class="summary">Sing along with the microphone on to see your pitch here.</span>
-          <span class="legend">
+          <span class="legend" id="legend">
             <i class="sw good"></i>within tolerance <i class="sw close"></i>close <i class="sw off"></i>off
-            <i class="sw prev"></i>previous take
+            <span class="takes"><i class="sw prev"></i>previous take</span>
+            <span class="ref" hidden><i class="sw ref"></i>recording</span>
           </span>
           <span class="spacer"></span>
+          <button id="recLoad" class="btn ghost small" title="Show the pitch of an audio recording (e.g. a singer's version) on the graph">Load recording…</button>
+          <input id="recFile" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac" hidden />
           <button id="fitPitch" class="btn ghost small" title="Fit the pitch axis to the notes in view (taller rows), or show the part's whole range" aria-pressed="true">↕ Fit</button>
           <button id="diagnoseBtn" class="btn ghost small" title="Look for timing, octave and other problems in the last take" disabled>Diagnose</button>
           <button id="zoomOut" class="btn ghost small" title="Zoom out">−</button>
           <button id="zoomIn" class="btn ghost small" title="Zoom in">+</button>
+        </div>
+        <div id="recBar" class="rec-bar" hidden>
+          <span class="name" id="recName"></span>
+          <span id="recStatus" class="muted"></span>
+          <label title="Time in the recording where the score starts">Starts at <input id="recOffset" type="number" step="0.05" /> s</label>
+          <label title="Tempo of the recording relative to the score's notated tempo">Tempo <input id="recRate" type="number" step="0.5" min="40" max="200" /> %</label>
+          <label title="Semitones the recording is shifted to match the score's key">Transpose <input id="recTranspose" type="number" step="1" min="-11" max="11" /></label>
+          <button id="recAlign" class="btn ghost small" title="Find the start, tempo and key automatically">Auto-align</button>
+          <button id="recClear" class="btn ghost small">Clear</button>
         </div>
         <div class="roll-wrap">
           <canvas id="roll"></canvas>

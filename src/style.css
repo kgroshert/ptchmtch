@@ -9,6 +9,7 @@
   --target: #2f6fde;
   --take-prev: rgba(80, 86, 96, 0.45);
   --take-free: #5b6170;
+  --take-ref: #8b5cf6;
   --roll-bg: #ffffff;
   --roll-gutter: #f3f2ee;
   --roll-sharp: rgba(0, 0, 0, 0.035);
@@ -34,6 +35,7 @@
     --target: #6d9cf0;
     --take-prev: rgba(200, 205, 215, 0.4);
     --take-free: #b7bcc6;
+    --take-ref: #b197fc;
     --roll-bg: #1b1d20;
     --roll-gutter: #222428;
     --roll-sharp: rgba(255, 255, 255, 0.03);
@@ -460,7 +462,7 @@ body.graph-hidden .splitter {
 
 .roll-pane {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   margin: 0 14px 12px;
   min-height: 0;
 }
@@ -534,6 +536,43 @@ body.graph-hidden .splitter {
 }
 .sw.prev {
   background: var(--take-prev);
+}
+.sw.ref {
+  background: var(--take-ref);
+}
+
+/* ---- recording bar ---- */
+
+.rec-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 0 0 6px;
+  font-size: 13px;
+}
+
+.rec-bar[hidden] {
+  display: none;
+}
+
+.rec-bar .name {
+  font-weight: 600;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rec-bar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+
+.rec-bar input[type="number"] {
+  width: 72px;
 }
 
 .roll-wrap {

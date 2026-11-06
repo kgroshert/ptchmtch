@@ -13,6 +13,8 @@ export interface RollModel {
   results: Map<number, NoteResult>;
   /** Each note's median cents in every pass of the current loop, for the tooltip. */
   repeats: Map<number, number[]>;
+  /** A loaded recording's pitch line, shown instead of the sung takes. */
+  reference: TakeSample[] | null;
   settings: Settings;
 }
 
@@ -28,6 +30,9 @@ export class PitchRoll {
   follow = true;
   /** Fit the pitch axis to the notes in view (taller rows) instead of the part's whole range. */
   fitPitch = true;
+  /** Pitch-axis zoom (1 = the fitted or whole range) and the view centre's shift in semitones. */
+  pitchZoom = 1;
+  pitchShift = 0;
   onRangeSelect: (fromMeasure: number, toMeasure: number) => void = () => {};
   onNoteDblClick: (ev: NoteEvent) => void = () => {};
 
@@ -35,7 +40,11 @@ export class PitchRoll {
   private w = 0;
   private h = 0;
   private model: RollModel | null = null;
-  private drag: { kind: "pan"; x: number; view: number } | { kind: "range"; from: number; to: number } | null = null;
+  private drag:
+    | { kind: "pan"; x: number; view: number }
+    | { kind: "range"; from: number; to: number }
+    | { kind: "pitch"; y: number; shift: number; rowH: number }
+    | null = null;
   private hoverX: number | null = null;
 
   constructor(
@@ -54,6 +63,10 @@ export class PitchRoll {
     canvas.addEventListener("wheel", (e) => this.wheel(e), { passive: false });
     canvas.addEventListener("dblclick", (e) => {
       const { x, y } = this.local(e);
+      if (x < GUTTER && y > RULER) {
+        this.resetPitchZoom(); // double-click the note names to undo pitch zoom
+        return;
+      }
       if (y < RULER || x < GUTTER) return;
       const beat = this.xToBeat(x);
       const ev = this.model?.track?.events.find((n) => n.start <= beat && n.end > beat);
@@ -100,7 +113,8 @@ export class PitchRoll {
     return GUTTER + (b - this.viewStart) * this.pxPerBeat;
   }
 
-  private pitchSpan(): [number, number] {
+  /** The pitch range before zooming: the part's notes in view (or its whole range), padded. */
+  private baseSpan(): [number, number] {
     const t = this.model?.track;
     let lo = t ? t.minMidi - 4 : 55;
     let hi = t ? t.maxMidi + 4 : 79;
@@ -120,6 +134,38 @@ export class PitchRoll {
       hi++;
     }
     return [lo, hi];
+  }
+
+  private pitchSpan(): [number, number] {
+    const [lo, hi] = this.baseSpan();
+    if (this.pitchZoom <= 1) return [lo, hi];
+    const n = Math.max(5, Math.round((hi - lo + 1) / this.pitchZoom));
+    const from = Math.round((lo + hi) / 2 + this.pitchShift - (n - 1) / 2);
+    return [from, from + n - 1];
+  }
+
+  /** Zooms the pitch axis, keeping the pitch under `y` in place. */
+  zoomPitch(factor: number, y = RULER + (this.h - RULER) / 2): void {
+    const [bl, bh] = this.baseSpan();
+    const [lo, hi] = this.pitchSpan();
+    const rows = hi - lo + 1;
+    const anchor = hi + 0.5 - ((y - RULER) / (this.h - RULER)) * rows;
+    this.pitchZoom = Math.min(8, Math.max(1, this.pitchZoom * factor));
+    if (this.pitchZoom === 1) {
+      this.pitchShift = 0;
+    } else {
+      // Scale the anchor's distance to the centre with the zoom, so it stays under the pointer.
+      const rowsAfter = Math.max(5, Math.round((bh - bl + 1) / this.pitchZoom));
+      const centre = anchor + ((lo + hi) / 2 - anchor) * (rowsAfter / rows);
+      this.pitchShift = centre - (bl + bh) / 2;
+    }
+    this.redraw();
+  }
+
+  resetPitchZoom(): void {
+    this.pitchZoom = 1;
+    this.pitchShift = 0;
+    this.redraw();
   }
 
   private resize(): void {
@@ -234,8 +280,12 @@ export class PitchRoll {
     // Sung pitch
     // Line widths grow with the rows, so the trace stays easy to read against the note.
     const trace = Math.max(2.5, Math.min(5, rowH / 5));
-    this.paintTake(m.previous, () => v("--take-prev"), yOf, trace * 0.6);
-    this.paintTake(m.current, (c) => (c === null ? v("--take-free") : statusColor(this.classify(c))), yOf, trace);
+    if (m.reference) {
+      this.paintTake(m.reference, () => v("--take-ref"), yOf, trace);
+    } else {
+      this.paintTake(m.previous, () => v("--take-prev"), yOf, trace * 0.6);
+      this.paintTake(m.current, (c) => (c === null ? v("--take-free") : statusColor(this.classify(c))), yOf, trace);
+    }
 
     // Playhead
     if (m.playhead !== null) {
@@ -331,6 +381,10 @@ export class PitchRoll {
       const i = this.measureIndexAt(this.xToBeat(x));
       this.drag = { kind: "range", from: i, to: i };
       this.redraw();
+    } else if (x < GUTTER && this.pitchZoom > 1) {
+      // Dragging the note names moves the zoomed pitch axis up or down.
+      const [lo, hi] = this.pitchSpan();
+      this.drag = { kind: "pitch", y, shift: this.pitchShift, rowH: (this.h - RULER) / (hi - lo + 1) };
     } else {
       this.drag = { kind: "pan", x, view: this.viewStart };
       this.follow = false;
@@ -346,6 +400,9 @@ export class PitchRoll {
     } else if (d?.kind === "range") {
       d.to = this.measureIndexAt(this.xToBeat(x));
       this.redraw();
+    } else if (d?.kind === "pitch") {
+      this.pitchShift = d.shift + (y - d.y) / d.rowH;
+      this.redraw();
     }
     this.hoverX = y > RULER && x > GUTTER ? x : null;
     this.showTip(e);
@@ -360,6 +417,14 @@ export class PitchRoll {
 
   private wheel(e: WheelEvent): void {
     e.preventDefault();
+    const { x, y } = this.local(e);
+    // Pitch zoom: Alt/Option + wheel anywhere, or the plain wheel over the note names.
+    if (e.altKey || (x < GUTTER && y > RULER)) {
+      const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      // About 1.25× per mouse-wheel notch; trackpads send smaller steps.
+      this.zoomPitch(Math.exp(-Math.max(-120, Math.min(120, d)) * 0.002), y);
+      return;
+    }
     if (e.ctrlKey || e.metaKey) {
       this.zoom(Math.exp(-e.deltaY * 0.01), this.local(e).x);
       return;
