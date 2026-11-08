@@ -16,7 +16,8 @@ interface Point {
   judged: number | null;
 }
 
-const SPAN_SEC = 8;
+/** Seconds shown across the graph. */
+const SPAN_SEC = 60;
 const RANGE_CENTS = 150;
 const STEADY_SEC = 5;
 /** Live vibrato is measured over this much of the current held stretch. */
@@ -43,10 +44,16 @@ export class PitchTrainer {
   /** One vibrato cycle while a vibrato is detected, else 0 (judge the raw pitch). */
   private cycleSec = 0;
   private toneOn = false;
-  // Session totals for the current note.
+  private listening = true;
+  /** Time of the first sample of the current take, and when it was stopped. */
+  private takeStart: number | null = null;
+  private takeEnd: number | null = null;
+  // Session totals for the current take.
   private voicedSec = 0;
   private inTuneSec = 0;
   private absCentsSec = 0;
+  private centsSec = 0;
+  private sqCentsSec = 0;
   private held: PitchPoint[] = [];
   private longestHeld: PitchPoint[] = [];
   private raf = 0;
@@ -58,6 +65,7 @@ export class PitchTrainer {
     this.$("trPrev").addEventListener("click", () => this.onPrev());
     this.$("trNext").addEventListener("click", () => this.onNext());
     this.$("trTone").addEventListener("click", () => this.setTone(!this.toneOn));
+    this.$("trListen").addEventListener("click", () => this.setListening(!this.listening));
     this.$("trClose").addEventListener("click", () => this.dlg.close());
     this.dlg.addEventListener("close", () => {
       this.flush();
@@ -65,9 +73,14 @@ export class PitchTrainer {
       cancelAnimationFrame(this.raf);
     });
     this.dlg.addEventListener("keydown", (e) => {
+      // Arrow keys, Space and Enter belong to the detection controls while they have focus.
+      if ((e.target as HTMLElement).closest("input, select")) return;
       if (e.key === "ArrowLeft") this.onPrev();
       else if (e.key === "ArrowRight") this.onNext();
-      else if (e.code === "Space") {
+      else if (e.key === "Enter") {
+        e.preventDefault();
+        this.setListening(!this.listening);
+      } else if (e.code === "Space") {
         e.preventDefault();
         this.setTone(!this.toneOn);
       }
@@ -93,12 +106,9 @@ export class PitchTrainer {
   setTarget(target: TrainerTarget): void {
     this.flush();
     this.target = target;
-    this.points = [];
-    this.streakStart = null;
-    this.best = 0;
-    this.voicedSec = this.inTuneSec = this.absCentsSec = 0;
-    this.held = [];
-    this.longestHeld = [];
+    // A new note starts a new take.
+    this.listening = true;
+    this.reset();
     this.$("trTitle").textContent = midiName(target.midi);
     this.$("trContext").textContent = target.context;
     if (this.toneOn) {
@@ -108,12 +118,72 @@ export class PitchTrainer {
     }
   }
 
+  /** Starts a new take from an empty graph. */
+  private reset(): void {
+    this.points = [];
+    this.streakStart = null;
+    this.best = 0;
+    this.voicedSec = this.inTuneSec = this.absCentsSec = this.centsSec = this.sqCentsSec = 0;
+    this.held = [];
+    this.longestHeld = [];
+    this.takeStart = this.takeEnd = null;
+    this.showListening();
+  }
+
+  private setListening(on: boolean): void {
+    if (on === this.listening) return;
+    this.listening = on;
+    if (on) {
+      this.reset();
+      return;
+    }
+    this.takeEnd = this.points[this.points.length - 1]?.time ?? null;
+    this.endHeld();
+    this.renderResult();
+    this.flush();
+    this.showListening();
+  }
+
+  private showListening(): void {
+    const btn = this.$("trListen");
+    btn.textContent = this.listening ? "Stop" : "Start";
+    this.$("trLive").hidden = !this.listening;
+    this.$("trResult").hidden = this.listening;
+  }
+
+  /** The KPIs of the take just stopped. */
+  private renderResult(): void {
+    const el = this.$("trResult");
+    const v = this.voicedSec;
+    const total = this.takeStart !== null && this.takeEnd !== null ? this.takeEnd - this.takeStart : 0;
+    if (v < 0.3) {
+      el.innerHTML = `<h3>Result</h3><p class="muted">Nothing was sung. Press Start and sing the note.</p>`;
+      return;
+    }
+    const mean = this.centsSec / v;
+    const sd = Math.sqrt(Math.max(0, this.sqCentsSec / v - mean * mean));
+    const vib = analyseVibrato(this.longestHeld);
+    const kpi = (value: string, label: string) =>
+      `<div class="kpi${value.length > 14 ? " long" : ""}"><b>${value}</b>${label}</div>`;
+    el.innerHTML =
+      `<h3>Result</h3>` +
+      kpi(`${Math.round((this.inTuneSec / v) * 100)}%`, `in tune (±${this.settings.toleranceCents}¢)`) +
+      kpi(`${Math.round(this.absCentsSec / v)}¢`, "mean deviation") +
+      kpi(Math.abs(mean) < 3 ? "centred" : `${Math.round(Math.abs(mean))}¢ ${mean > 0 ? "sharp" : "flat"}`, "on average") +
+      kpi(`±${Math.round(sd)}¢`, "steadiness (spread around your average)") +
+      kpi(`${this.best.toFixed(1)} s`, "longest hold in tune") +
+      kpi(`${v.toFixed(1)} s`, `sung${total ? ` of ${total.toFixed(1)} s` : ""}`) +
+      kpi(vib ? describeVibrato(vib) : "–", "vibrato (longest held stretch)") +
+      (v < MIN_SESSION_SEC ? `<p class="muted">Too short to be saved in the history.</p>` : "");
+  }
+
   get midi(): number | null {
     return this.target?.midi ?? null;
   }
 
   push(s: PitchSample): void {
-    if (!this.target || !this.dlg.open) return;
+    if (!this.target || !this.dlg.open || !this.listening) return;
+    this.takeStart ??= s.time;
     const cents = s.midi === null ? null : centsOff(s.midi, this.target.midi, this.settings.octaveFree);
     const prev = this.points[this.points.length - 1];
 
@@ -132,6 +202,8 @@ export class PitchTrainer {
         const dt = s.time - prev.time;
         this.voicedSec += dt;
         this.absCentsSec += Math.abs(judged!) * dt;
+        this.centsSec += judged! * dt;
+        this.sqCentsSec += judged! * judged! * dt;
         if (Math.abs(judged!) <= this.settings.toleranceCents) this.inTuneSec += dt;
       }
     }
@@ -221,11 +293,25 @@ export class PitchTrainer {
       }
     }
 
-    // Trace, newest at the right edge
+    // Trace: fills from the left, then scrolls with the newest at the right edge.
     const pts = this.points;
     const now = pts.length ? pts[pts.length - 1].time : 0;
-    const x = (t: number) => w - 14 - ((now - t) / SPAN_SEC) * (w - LEFT - 14);
-    ctx.lineWidth = 2.5;
+    const start = this.takeStart ?? now;
+    const viewStart = Math.max(start, now - SPAN_SEC);
+    const x = (t: number) => LEFT + ((t - viewStart) / SPAN_SEC) * (w - LEFT - 14);
+    // Time grid every 5 s of the take.
+    ctx.textBaseline = "bottom";
+    ctx.textAlign = "center";
+    for (let s = Math.ceil((viewStart - start) / 5) * 5; start + s <= viewStart + SPAN_SEC; s += 5) {
+      const xx = Math.round(x(start + s));
+      ctx.fillStyle = v("--roll-grid");
+      ctx.fillRect(xx, 0, 1, h);
+      ctx.fillStyle = v("--muted");
+      ctx.fillText(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`, xx, h - 3);
+    }
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 3;
     ctx.lineCap = "round";
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1];
@@ -237,6 +323,8 @@ export class PitchTrainer {
       ctx.lineTo(x(b.time), y(b.cents));
       ctx.stroke();
     }
+
+    if (!this.listening) return;
 
     // Readout
     const last = pts[pts.length - 1];

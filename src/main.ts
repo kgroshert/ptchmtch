@@ -32,12 +32,14 @@ import {
   type Run,
   type TrainerSession,
 } from "./history";
-import { midiName, PitchTracker, type PitchSample } from "./pitch";
+import { midiName, PitchTracker, type MethodReading, type PitchSample } from "./pitch";
+import { DETECTORS, type DetectorId } from "./detectors";
 import { Player } from "./player";
 import { PitchRoll } from "./roll";
 import { Score, type NoteEvent, type Track } from "./score";
 import { oscillates } from "./vibrato";
 import { PitchTrainer } from "./trainer";
+import { EXERCISES, KEYS, VOICES, generateExercise, type ExerciseId, type VoiceType } from "./exercises";
 
 type Mode = "lead" | "normal" | "mute";
 
@@ -63,6 +65,10 @@ interface Prefs {
   fitPitch: boolean;
   /** Height of the pitch graph in px (0 = default). */
   rollHeight: number;
+  /** Pitch detection method, its per-method minimum confidence, and the analysis window. */
+  pitchMethod: DetectorId;
+  pitchThresholds: Partial<Record<DetectorId, number>>;
+  pitchWindow: number;
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -85,6 +91,9 @@ const DEFAULTS: Prefs = {
   onlyMyPart: false,
   fitPitch: true,
   rollHeight: 0,
+  pitchMethod: "mpm",
+  pitchThresholds: {},
+  pitchWindow: 2048,
 };
 
 function loadPrefs(): Prefs {
@@ -172,13 +181,13 @@ async function loadScore(content: string | Blob, name: string): Promise<void> {
     return;
   }
   loaded = true;
-  clearRecording(); // it was lined up with the previous piece
   scorePane.classList.add("has-score");
   $("title").textContent = score.title;
   document.title = `${score.title} · ptchmtch`;
 
   fillVoiceSelect();
   range = { from: 0, to: score.measures.length - 1 };
+  clearRecording(); // it was lined up with the previous piece
   selectTrack(score.tracks[0]?.key ?? null);
   roll.viewStart = -0.5;
   scorePane.scrollTop = 0;
@@ -297,18 +306,6 @@ function drawOverlay(): void {
     ov.append(d);
   }
 }
-
-scorePane.addEventListener("click", (e) => {
-  if (!loaded) return;
-  const r = scorePane.getBoundingClientRect();
-  const x = e.clientX - r.left + scorePane.scrollLeft;
-  const y = e.clientY - r.top + scorePane.scrollTop;
-  const boxes = score.measureBoxes();
-  const i = boxes.findIndex((b) => x >= b.x && x <= b.x + b.w && y >= b.y - 12 && y <= b.y + b.h + 12);
-  if (i < 0) return;
-  if (e.shiftKey) setRange(Math.min(range.from, i), Math.max(range.to, i));
-  else setRange(i, i);
-});
 
 roll.onRangeSelect = (a, b) => setRange(a, b);
 
@@ -526,6 +523,7 @@ async function toggleMic(): Promise<void> {
   const p = getPlayer();
   tracker ??= new PitchTracker(p.ctx);
   tracker.onSample = onSample;
+  applyDetection();
   try {
     await tracker.start(prefs.deviceId || undefined);
     btn.classList.add("on");
@@ -533,6 +531,151 @@ async function toggleMic(): Promise<void> {
   } catch (err) {
     alert(`Microphone unavailable: ${(err as Error).message ?? err}`);
   }
+}
+
+// --- pitch detection settings ---------------------------------------------
+
+const detectorInfo = (id: DetectorId) => DETECTORS.find((d) => d.id === id) ?? DETECTORS[0];
+const thresholdOf = (id: DetectorId) => prefs.pitchThresholds[id] ?? detectorInfo(id).threshold;
+
+/** Refreshes every place that shows the detection settings (Settings dialog, trainer). */
+const detectionViews: (() => void)[] = [];
+
+function applyDetection(): void {
+  $("detectSummary").textContent = `${detectorInfo(prefs.pitchMethod).label}, window ${prefs.pitchWindow}`;
+  for (const v of detectionViews) v();
+  if (!tracker) return;
+  tracker.method = prefs.pitchMethod;
+  for (const d of DETECTORS) tracker.thresholds[d.id] = thresholdOf(d.id);
+  tracker.windowSize = prefs.pitchWindow;
+}
+
+function bindDetection(): void {
+  const dlg = $<HTMLDialogElement>("detect");
+  const rows = $("detectRows");
+  const slider = $<HTMLInputElement>("detectThreshold");
+  const win = $<HTMLSelectElement>("detectWindow");
+  /** Per method: times of the last 3 s of loud frames, and whether each was accepted. */
+  let recent = new Map<DetectorId, { t: number; ok: boolean }[]>();
+
+  rows.innerHTML = DETECTORS.map(
+    (d) =>
+      `<tr data-id="${d.id}"><td>${d.label}</td><td class="note">–</td>` +
+      `<td><div class="conf"><i></i><b></b></div></td><td class="share">–</td></tr>`,
+  ).join("");
+  rows.addEventListener("click", (e) => {
+    const tr = (e.target as HTMLElement).closest<HTMLElement>("tr[data-id]");
+    if (!tr) return;
+    prefs.pitchMethod = tr.dataset.id as DetectorId;
+    savePrefs();
+    applyDetection();
+  });
+
+  const sync = (): void => {
+    const info = detectorInfo(prefs.pitchMethod);
+    for (const tr of rows.querySelectorAll<HTMLElement>("tr")) {
+      const id = tr.dataset.id as DetectorId;
+      tr.classList.toggle("selected", id === prefs.pitchMethod);
+      tr.querySelector<HTMLElement>(".conf > b")!.style.left = `${thresholdOf(id) * 100}%`;
+    }
+    $("detectDesc").textContent = `${info.label}: ${info.description} Its confidence measures ${info.confidence}.`;
+    $("detectMethodName").textContent = info.label;
+    slider.value = String(thresholdOf(info.id));
+    $("detectThresholdOut").textContent = thresholdOf(info.id).toFixed(2);
+    win.value = String(prefs.pitchWindow);
+  };
+
+  slider.addEventListener("input", () => {
+    prefs.pitchThresholds = { ...prefs.pitchThresholds, [prefs.pitchMethod]: +slider.value };
+    savePrefs();
+    applyDetection();
+  });
+  win.addEventListener("change", () => {
+    prefs.pitchWindow = +win.value;
+    savePrefs();
+    applyDetection();
+    recent = new Map();
+  });
+  $("detectReset").addEventListener("click", () => {
+    prefs.pitchMethod = DEFAULTS.pitchMethod;
+    prefs.pitchThresholds = {};
+    prefs.pitchWindow = DEFAULTS.pitchWindow;
+    savePrefs();
+    applyDetection();
+  });
+  detectionViews.push(sync);
+
+  const onCompare = (readings: MethodReading[], level: number) => {
+    const now = performance.now() / 1000;
+    for (const r of readings) {
+      const tr = rows.querySelector<HTMLElement>(`tr[data-id="${r.id}"]`)!;
+      const e = r.estimate;
+      const note = tr.querySelector<HTMLElement>(".note")!;
+      if (e) {
+        const midi = 69 + 12 * Math.log2(e.hz / 440);
+        const c = Math.round((midi - Math.round(midi)) * 100);
+        note.textContent = `${midiName(midi)} ${c >= 0 ? "+" : ""}${c}¢`;
+      } else note.textContent = "–";
+      note.classList.toggle("rejected", !r.accepted);
+      const bar = tr.querySelector<HTMLElement>(".conf > i")!;
+      bar.style.width = `${(e?.confidence ?? 0) * 100}%`;
+      bar.classList.toggle("ok", r.accepted);
+      // Detection rate over loud frames only, so pauses between notes don't count.
+      const list = recent.get(r.id) ?? [];
+      if (level >= (tracker?.gate ?? 0)) list.push({ t: now, ok: r.accepted });
+      while (list.length && list[0].t < now - 3) list.shift();
+      recent.set(r.id, list);
+      tr.querySelector<HTMLElement>(".share")!.textContent = list.length
+        ? `${Math.round((list.filter((x) => x.ok).length / list.length) * 100)}%`
+        : "–";
+    }
+  };
+
+  $("detectBtn").addEventListener("click", async () => {
+    $<HTMLDialogElement>("settings").close();
+    dlg.showModal();
+    const t = await ensureMic();
+    if (t && dlg.open) t.onCompare = onCompare;
+  });
+  $("detectClose").addEventListener("click", () => dlg.close());
+  dlg.addEventListener("close", () => {
+    if (tracker) tracker.onCompare = null;
+    recent = new Map();
+  });
+  bindTrainerDetection();
+  applyDetection();
+}
+
+/** The compact detection controls in the trainer: method, its minimum confidence and the window. */
+function bindTrainerDetection(): void {
+  const method = $<HTMLSelectElement>("trMethod");
+  const slider = $<HTMLInputElement>("trThreshold");
+  const win = $<HTMLSelectElement>("trWindow");
+  for (const d of DETECTORS) method.append(new Option(d.label, d.id));
+  method.addEventListener("change", () => {
+    prefs.pitchMethod = method.value as DetectorId;
+    savePrefs();
+    applyDetection();
+  });
+  slider.addEventListener("input", () => {
+    prefs.pitchThresholds = { ...prefs.pitchThresholds, [prefs.pitchMethod]: +slider.value };
+    savePrefs();
+    applyDetection();
+  });
+  win.addEventListener("change", () => {
+    prefs.pitchWindow = +win.value;
+    savePrefs();
+    applyDetection();
+  });
+  detectionViews.push(() => {
+    const info = detectorInfo(prefs.pitchMethod);
+    method.value = info.id;
+    method.title = info.description;
+    slider.value = String(thresholdOf(info.id));
+    slider.title = `Minimum ${info.confidence}`;
+    $("trThresholdOut").textContent = thresholdOf(info.id).toFixed(2);
+    win.value = String(prefs.pitchWindow);
+  });
 }
 
 // --- run history ----------------------------------------------------------
@@ -1086,6 +1229,77 @@ function practise(from: number, to: number): void {
   setRange(from, to);
 }
 
+// --- practice scores ------------------------------------------------------
+
+const EX_KEY = "ptchmtch.exercise";
+
+function bindPracticeMenu(): void {
+  const btn = $("practiceBtn");
+  const panel = $("practicePanel");
+  const exSel = $<HTMLSelectElement>("exExercise");
+  const voiceSel = $<HTMLSelectElement>("exVoice");
+  const keySel = $<HTMLSelectElement>("exKey");
+
+  const group = (label: string, items: [string, string][]) => {
+    const g = document.createElement("optgroup");
+    g.label = label;
+    for (const [value, text] of items) g.append(new Option(text, value));
+    exSel.append(g);
+  };
+  const ex = (ids: string[]) => EXERCISES.filter((e) => ids.includes(e.id)).map((e) => [e.id, e.label] as [string, string]);
+  group("Scales", ex(["major-scale", "natural-minor-scale", "harmonic-minor-scale", "chromatic-scale"]));
+  group("Warm-ups", ex(["five-note-major", "five-note-minor", "arpeggio-major", "arpeggio-minor"]));
+  group("Pieces", [["chorale", "Practice chorale (SATB)"]]);
+  for (const v of VOICES) voiceSel.append(new Option(v.label, v.id));
+  KEYS.forEach((k, pc) => keySel.append(new Option(k, String(pc))));
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(EX_KEY) || "{}");
+    if (saved.exercise) exSel.value = saved.exercise;
+    if (saved.voice) voiceSel.value = saved.voice;
+    if (saved.key != null) keySel.value = String(saved.key);
+  } catch {
+    /* defaults */
+  }
+  const sync = () => {
+    for (const el of panel.querySelectorAll<HTMLElement>(".ex-param")) el.hidden = exSel.value === "chorale";
+  };
+  exSel.addEventListener("change", sync);
+  sync();
+
+  const show = (open: boolean) => {
+    panel.hidden = !open;
+    btn.setAttribute("aria-expanded", String(open));
+    if (open) exSel.focus();
+  };
+  btn.addEventListener("click", () => show(panel.hidden === true));
+  document.addEventListener("pointerdown", (e) => {
+    if (!panel.hidden && !btn.parentElement!.contains(e.target as Node)) show(false);
+  });
+  panel.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      show(false);
+      btn.focus();
+    }
+  });
+
+  $("exLoad").addEventListener("click", async () => {
+    show(false);
+    try {
+      localStorage.setItem(EX_KEY, JSON.stringify({ exercise: exSel.value, voice: voiceSel.value, key: +keySel.value }));
+    } catch {
+      /* not remembered */
+    }
+    if (exSel.value === "chorale") {
+      const res = await fetch(`${import.meta.env.BASE_URL}samples/chorale.musicxml`);
+      await loadScore(await res.text(), "sample");
+      return;
+    }
+    const g = generateExercise(exSel.value as ExerciseId, voiceSel.value as VoiceType, +keySel.value);
+    await loadScore(g.xml, g.title);
+  });
+}
+
 // --- controls -------------------------------------------------------------
 
 function bindControls(): void {
@@ -1093,10 +1307,7 @@ function bindControls(): void {
     const f = (e.target as HTMLInputElement).files?.[0];
     if (f) void loadScore(f, f.name);
   });
-  $("sample").addEventListener("click", async () => {
-    const res = await fetch(`${import.meta.env.BASE_URL}samples/chorale.musicxml`);
-    await loadScore(await res.text(), "sample");
-  });
+  bindPracticeMenu();
 
   // Drag & drop
   scorePane.addEventListener("dragover", (e) => {
@@ -1202,6 +1413,7 @@ function bindControls(): void {
   $("zoomOut").addEventListener("click", () => roll.zoom(0.8));
 
   // Settings dialog
+  bindDetection();
   const dlg = $<HTMLDialogElement>("settings");
   $("settingsBtn").addEventListener("click", () => {
     showLatency();

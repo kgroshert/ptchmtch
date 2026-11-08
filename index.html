@@ -14,7 +14,25 @@
           Open score…
           <input id="file" type="file" accept=".xml,.musicxml,.mxl" hidden />
         </label>
-        <button id="sample" class="btn ghost">Load sample</button>
+        <div class="practice-menu">
+          <button id="practiceBtn" class="btn ghost" aria-haspopup="true" aria-expanded="false">Practice scores ▾</button>
+          <div id="practicePanel" class="practice-panel" hidden>
+            <div class="field">
+              <label for="exExercise">Exercise</label>
+              <select id="exExercise"></select>
+            </div>
+            <div class="field ex-param">
+              <label for="exVoice">Voice</label>
+              <select id="exVoice"></select>
+            </div>
+            <div class="field ex-param">
+              <label for="exKey">Key</label>
+              <select id="exKey"></select>
+            </div>
+            <p class="muted ex-param">With movable-do solfège under the notes and piano chords (turn them down with Other parts).</p>
+            <button id="exLoad" class="btn primary">Load</button>
+          </div>
+        </div>
         <span id="title" class="title"></span>
         <span class="spacer"></span>
         <button id="mic" class="btn" title="Microphone on/off (M)">
@@ -87,7 +105,7 @@
         <div id="overlay"></div>
         <div id="empty" class="empty">
           <p>Open a MusicXML file (<code>.musicxml</code>, <code>.xml</code> or <code>.mxl</code>) or drop it here.</p>
-          <p class="hint">Click a bar to practise it, shift-click to extend the selection.</p>
+          <p class="hint">Or pick an exercise under Practice scores.</p>
         </div>
       </section>
 
@@ -146,20 +164,43 @@
         <button id="trPrev" class="btn ghost" title="Previous note (←)">◀ Previous</button>
         <button id="trNext" class="btn ghost" title="Next note (→)">Next ▶</button>
         <button id="trTone" class="btn" title="Play or stop the note (Space)">Play note</button>
+        <button id="trListen" class="btn primary" title="Start or stop listening (Enter)">Stop</button>
         <button id="trClose" class="btn ghost">Close</button>
+      </div>
+      <div class="trainer-detect">
+        <label>
+          Pitch detection
+          <select id="trMethod"></select>
+        </label>
+        <label>
+          Min. confidence
+          <input id="trThreshold" type="range" min="0.2" max="0.99" step="0.01" />
+          <output id="trThresholdOut"></output>
+        </label>
+        <label>
+          Window
+          <select id="trWindow">
+            <option value="1024">1024</option>
+            <option value="2048">2048</option>
+            <option value="4096">4096</option>
+          </select>
+        </label>
       </div>
       <div class="trainer-body">
         <div class="trainer-readout">
-          <div id="trCents" class="big">—</div>
-          <div id="trState" class="state"></div>
-          <div id="trVibrato" class="vibrato"></div>
-          <div id="trStats" class="stats"></div>
+          <div id="trLive">
+            <div id="trCents" class="big">—</div>
+            <div id="trState" class="state"></div>
+            <div id="trVibrato" class="vibrato"></div>
+            <div id="trStats" class="stats"></div>
+          </div>
+          <div id="trResult" class="result" hidden></div>
         </div>
         <canvas id="trCanvas"></canvas>
       </div>
       <p class="note">
-        Sing and hold the note. Keep the line inside the green band (your tolerance). Use headphones if you play the
-        note while singing.
+        Sing and hold the note. Keep the line inside the green band (your tolerance). Press Stop to see how the take
+        went, Start for a new one. Use headphones if you play the note while singing.
       </p>
     </dialog>
 
@@ -216,6 +257,13 @@
           Microphone
           <select id="device"><option value="">Default input</option></select>
         </label>
+        <div class="stack">
+          Pitch detection
+          <div class="detect-row">
+            <span id="detectSummary"></span>
+            <button id="detectBtn" type="button" class="btn ghost small">Change…</button>
+          </div>
+        </div>
         <label class="stack">
           Tolerance
           <select id="tolerance">
@@ -255,6 +303,39 @@
         </p>
         <div class="actions"><button class="btn primary" value="close">Done</button></div>
       </form>
+    </dialog>
+
+    <dialog id="detect" class="detect">
+      <h2>Pitch detection</h2>
+      <p class="muted">
+        Sing (or lip-trill) while this is open: the table compares all methods on your voice right now. Click a row to use
+        that method.
+      </p>
+      <table class="detect-table">
+        <thead>
+          <tr><th>Method</th><th>Note</th><th>Confidence</th><th>Detected, last 3 s</th></tr>
+        </thead>
+        <tbody id="detectRows"></tbody>
+      </table>
+      <p id="detectDesc" class="detect-desc"></p>
+      <label class="stack">
+        <span>Minimum confidence for <b id="detectMethodName"></b> <output id="detectThresholdOut"></output></span>
+        <input id="detectThreshold" type="range" min="0.2" max="0.99" step="0.01" />
+        <small>Lower accepts more sound as pitched (fewer gaps, more stray readings); higher is stricter. The mark in the confidence bar shows it.</small>
+      </label>
+      <label class="stack">
+        Analysis window
+        <select id="detectWindow">
+          <option value="1024">1024 samples: quickest response, not for low voices (below about 100 Hz)</option>
+          <option value="2048">2048 samples (default)</option>
+          <option value="4096">4096 samples: steadier, best for low voices, slower response</option>
+        </select>
+      </label>
+      <div class="actions">
+        <button id="detectReset" class="btn ghost">Reset to defaults</button>
+        <span class="spacer"></span>
+        <button id="detectClose" class="btn primary">Done</button>
+      </div>
     </dialog>
 
     <script type="module" src="/src/main.ts"></script>

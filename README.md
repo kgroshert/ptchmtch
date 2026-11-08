@@ -13,12 +13,17 @@ Open http://localhost:5173 in Chrome, Edge, Firefox or Safari. The browser only 
 
 ## Using it
 
-- **Open score…** (or drag a file onto the score area) loads `.musicxml`, `.xml` or compressed `.mxl`. **Load sample** opens a short SATB chorale.
+- **Open score…** (or drag a file onto the score area) loads `.musicxml`, `.xml` or compressed `.mxl`. **Practice scores ▾** generates an exercise for your voice type (soprano, alto, tenor or bass) in any key:
+  - *Scales*: major, natural minor, harmonic minor and chromatic, one octave up and down.
+  - *Warm-ups*: the five-note scale (1-2-3-4-5-4-3-2-1) and arpeggios (1-3-5-8-5-3-1), major and minor, each sung twice.
+  - *Pieces*: a short SATB chorale.
+
+  The notes are placed in the comfortable middle of the voice's range. Each exercise has movable-do solfège under the notes (minor is la-based: la ti do re mi fa sol, with si for the raised 7th; the chromatic scale uses di ri fi si li going up and te le se me ra going down) and a piano part with simple I, IV and V chords (a held tonic chord under the chromatic scale). Turn the piano down with **Other parts**, or hide it from the score with **Only my part**. Each exercise, voice and key keeps its own history.
 - **Play / Pause** (Space): Play continues from where you paused, at the start of that beat, and the run or loop statistics carry on. **⏮** (Home) jumps back to the start of the selection without starting or stopping playback. Changing the part or the bars also starts over from the beginning.
 - **Your part** lists every part, and every voice within a part, that contains notes. The selected part is coloured blue in the score.
 - **Your part in playback**: *Loud* to learn the notes, *Normal* to sing with it, *Muted* to test yourself. **Other parts** sets the volume of the accompaniment.
 - **Tempo** slows the playback down (or speeds it up) without changing pitch.
-- **Bars**: click a bar in the score to practise only that bar, and shift-click to extend the selection. You can also drag across the bar numbers above the pitch graph, or type bar numbers. **Loop** repeats the selection.
+- **Bars**: type the first and last bar to practise, or drag across the bar numbers above the pitch graph. **All** selects the whole piece. Clicking in the score doesn't change the selection, so double-clicking a note only opens the trainer. **Loop** repeats the selection.
 - **Loop** is off whenever you open the app.
 - **Only my part** hides the other parts' staves in the score, for more room. For a voice inside a piano part, only the staff it is written on is kept.
 - **Pitch graph**: drag the handle between the score and the graph to make the graph taller (double-click it to reset). **↕ Fit** fits the pitch axis to the notes in view, for taller rows and thicker lines; switch it off to see the part's whole range. The mouse wheel scrolls in time and ⌘/Ctrl + wheel zooms in time. To zoom the pitch axis, use the wheel over the note names, or ⌥/Alt + wheel anywhere; drag the note names to move up or down, and double-click them to reset.
@@ -30,13 +35,13 @@ Keyboard: `Space` plays or pauses, `Home` jumps back to the start, `L` toggles l
 
 ### Pitch trainer
 
-Double-click a note in the score (any part) or in the pitch graph to practise that one note. The trainer shows:
+Double-click a note in the score (any part) or in the pitch graph to practise that one note. The trainer opens across the full window and shows:
 
-- your pitch against the target over the last 8 seconds, with the tolerance band
+- your pitch against the target over about 60 seconds, with the tolerance band (the line fills from the left, then scrolls)
 - a live cents readout ("In tune", "A little flat", …)
 - how long you've held the note in tune, your longest hold, and the share in tune over the last 5 seconds
 
-**Play note** (Space) sounds the target note continuously. **Previous** and **Next** (← →) step through the notes of the part. The trainer turns the microphone on if it's off.
+**Stop** (Enter) stops listening, freezes the graph and shows the take's results on the left: share in tune, mean deviation, whether you were flat or sharp on average, steadiness (spread around your own average), longest hold, time sung and vibrato. **Start** clears the graph for a new take. **Play note** (Space) sounds the target note continuously. **Previous** and **Next** (← →) step through the notes of the part. The trainer turns the microphone on if it's off.
 
 ### Vibrato
 
@@ -102,8 +107,24 @@ When a result looks wrong, **Diagnose** (above the pitch graph) checks the last 
 - **Ignore 8va / 8vb marks**: plays and scores notes under octave marks as written, without the octave shift. Use it when a mark is only there for readability, or is a mistake in the score. History is unaffected.
 - **Latency correction**: lines up your pitch line with the notes. Use **Calibrate…** to measure it (see below), or adjust it by hand if your line always looks a little late or early.
 - **Microphone**: choose the input device.
+- **Pitch detection → Change…**: choose how pitch is detected (see below).
 
 Use headphones. With speakers, the microphone also picks up the playback.
+
+### Pitch detection
+
+Four methods are available. While the dialog is open, all four run on your voice side by side: the table shows each one's note, its confidence (with a mark at its threshold) and the share of the last 3 seconds of sound it detected. Click a row to use that method.
+
+| Method | How it works | Good for |
+| --- | --- | --- |
+| **McLeod (MPM)** (default) | Normalised autocorrelation | Clean, steady singing; the most precise and the fastest. |
+| **YIN** | Normalised difference function | Voice in general; a little more tolerant of breathy or uneven sound. |
+| **Harmonic spectrum** | Finds the note whose harmonics carry most of the energy | Buzzy or noisy sounds such as lip trills, tongue trills and breathy tone. |
+| **Cepstrum** | Finds the regular spacing of the harmonics | Also buzzy sounds; needs a rich tone, so it misses very low, pure notes. |
+
+The pitch trainer has the same settings in a row under its title (method, minimum confidence, window), so you can switch while practising a note; both places stay in sync. Each method has its own **minimum confidence**: lower it to fill gaps, raise it if stray readings appear. The **analysis window** trades response time against steadiness: 1024 samples reacts fastest but can't follow notes below about 100 Hz; 4096 is steadiest and best for low voices.
+
+A lip trill makes the sound flutter on and off about 20–30 times a second, with breath noise in between, so the autocorrelation methods see too little regularity and reject it. In tests with a synthetic lip trill, McLeod detected almost none of it, YIN about half, and both spectral methods nearly all, while all four stayed within a few cents on steady tone. Recordings loaded onto the pitch graph are still analysed with McLeod.
 
 ### Latency calibration
 
@@ -122,10 +143,12 @@ Calibrate again whenever you change headphones or microphone.
 | --- | --- |
 | `src/score.ts` | Renders the score with [OpenSheetMusicDisplay](https://opensheetmusicdisplay.org/) and reads parts, voices, notes (ties merged), bars and tempo from its model. Also handles the cursor, bar geometry and notehead colouring. |
 | `src/player.ts` | Web Audio scheduler and a simple built-in synth. Handles per-part volume, count-in, metronome and looping. Maps audio time to score position. |
-| `src/pitch.ts` | Microphone input with the McLeod pitch method ([pitchy](https://github.com/ianprime0509/pitchy)), with browser voice processing turned off. |
+| `src/pitch.ts` | Microphone input, with browser voice processing turned off. |
+| `src/detectors.ts` | Pitch detection methods: McLeod ([pitchy](https://github.com/ianprime0509/pitchy)), YIN, harmonic spectrum and cepstrum. |
 | `src/analysis.ts` | Scores each note (median deviation, share in tune, coverage, onset, vibrato) and computes precision across passes. |
 | `src/roll.ts` | The pitch graph (canvas). |
 | `src/trainer.ts` | Single-note pitch trainer. |
+| `src/exercises.ts` | Generates the practice scores (scales and warm-ups) as MusicXML. |
 | `src/calibration.ts` | Latency calibration: plays the beats, detects syllable onsets, computes the correction. |
 | `src/vibrato.ts` | Vibrato rate, width, regularity and classification; vibrato centre line. |
 | `src/diagnosis.ts` | Take diagnosis: timing fit, octave slips, worst notes. |

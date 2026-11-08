@@ -707,7 +707,8 @@ dialog small,
 /* ---- pitch trainer ---- */
 
 dialog.trainer {
-  width: min(860px, 94vw);
+  width: calc(100vw - 32px);
+  max-width: none;
 }
 
 .trainer-head {
@@ -723,16 +724,42 @@ dialog.trainer {
   font-size: 22px;
 }
 
+.trainer-detect {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin: -4px 0 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.trainer-detect label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trainer-detect input[type="range"] {
+  width: 120px;
+}
+
+.trainer-detect output {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+  min-width: 2.5em;
+}
+
 .trainer-body {
   display: grid;
-  grid-template-columns: 190px 1fr;
+  grid-template-columns: 210px 1fr;
   gap: 16px;
   margin-bottom: 10px;
 }
 
 #trCanvas {
   width: 100%;
-  height: 300px;
+  height: max(300px, calc(100vh - 260px));
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
@@ -766,6 +793,34 @@ dialog.trainer {
 
 .trainer-readout .stats b {
   color: var(--fg);
+}
+
+.trainer-readout .result {
+  display: grid;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trainer-readout .result h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.trainer-readout .result .kpi {
+  display: grid;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.trainer-readout .result .kpi b {
+  color: var(--fg);
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.trainer-readout .result .kpi.long b {
+  font-size: 15px;
 }
 
 @media (max-width: 640px) {
@@ -946,4 +1001,125 @@ dialog.calibration .actions {
 .roll-head .btn.on {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+/* ---- practice scores menu ---- */
+
+.practice-menu {
+  position: relative;
+}
+
+.practice-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  width: 260px;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+}
+
+.practice-panel[hidden] {
+  display: none;
+}
+
+.practice-panel select {
+  width: 100%;
+}
+
+.practice-panel p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.practice-panel .ex-param[hidden] {
+  display: none;
+}
+
+/* ---- pitch detection ---- */
+
+.detect-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg);
+}
+
+dialog.detect {
+  width: min(680px, 94vw);
+}
+
+.detect-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.detect-table th {
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.detect-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.detect-table tbody tr {
+  cursor: pointer;
+}
+
+.detect-table tbody tr:hover {
+  background: var(--accent-soft);
+}
+
+.detect-table tr.selected td:first-child {
+  font-weight: 650;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.detect-table .rejected {
+  color: var(--muted);
+}
+
+.conf {
+  position: relative;
+  width: 120px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.conf > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--muted);
+}
+
+.conf > i.ok {
+  background: var(--accent);
+}
+
+.conf > b {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--fg);
+}
+
+.detect-desc {
+  margin: 0 0 12px;
+  font-size: 13px;
 }
