@@ -5,7 +5,7 @@ import { PitchDetector } from "pitchy";
  * the confidence measures differs per method, so each has its own threshold.
  */
 
-export type DetectorId = "mpm" | "yin" | "harmonic" | "cepstrum";
+export type DetectorId = "mpm" | "yin" | "pyin" | "harmonic" | "cepstrum";
 
 export const MIN_HZ = 60;
 export const MAX_HZ = 1400;
@@ -41,6 +41,14 @@ export const DETECTORS: DetectorInfo[] = [
     description: "Normalised difference function. Widely used for voice; a little more tolerant of breathy or uneven sound.",
   },
   {
+    id: "pyin",
+    label: "pYIN",
+    confidence: "voicing probability",
+    threshold: 0.1,
+    description:
+      "Probabilistic YIN: keeps several pitch candidates per frame and picks the most plausible line over time, which removes octave jumps and stray readings. Shows the pitch about 75 ms later than the others.",
+  },
+  {
     id: "harmonic",
     label: "Harmonic spectrum",
     confidence: "harmonicity",
@@ -66,6 +74,7 @@ export class DetectorBank {
   private hann: Float64Array;
   /** Frame for which the spectrum was last computed (shared by the spectral methods). */
   private spectrumOf: Float32Array | null = null;
+  private cmndfOf: Float32Array | null = null;
   private yinBuf: Float64Array;
   // Scratch buffers, allocated once.
   private ar: Float64Array;
@@ -95,6 +104,7 @@ export class DetectorBank {
   /** Call once per new frame before `detect`, so the spectral methods share one FFT. */
   newFrame(): void {
     this.spectrumOf = null;
+    this.cmndfOf = null;
   }
 
   detect(id: DetectorId, buf: Float32Array, sr: number): Estimate | null {
@@ -108,6 +118,13 @@ export class DetectorBank {
       case "yin":
         est = this.yin(buf, sr);
         break;
+      case "pyin": {
+        // Frame by frame, the likeliest candidate; PYinTracker decodes the line over time.
+        const cs = this.pyinCandidates(buf, sr);
+        const best = cs.reduce<{ hz: number; p: number } | null>((a, c) => (!a || c.p > a.p ? c : a), null);
+        est = best && { hz: best.hz, confidence: Math.min(1, cs.reduce((a, c) => a + c.p, 0)) };
+        break;
+      }
       case "harmonic":
         est = this.harmonic(buf, sr);
         break;
@@ -121,11 +138,17 @@ export class DetectorBank {
 
   // --- YIN (de Cheveigné & Kawahara 2002) --------------------------------
 
-  private yin(buf: Float32Array, sr: number): Estimate | null {
+  /**
+   * YIN's cumulative mean normalised difference d'(τ) of the frame, for lags tauMin..tauMax
+   * (computed once per frame; shared by YIN and pYIN).
+   */
+  cmndf(buf: Float32Array, sr: number): { d: Float64Array; tauMin: number; tauMax: number } {
     const W = buf.length / 2;
     const d = this.yinBuf;
     const tauMin = Math.max(2, Math.floor(sr / MAX_HZ));
     const tauMax = Math.min(W - 1, Math.ceil(sr / MIN_HZ));
+    if (this.cmndfOf === buf) return { d, tauMin, tauMax };
+    this.cmndfOf = buf;
     // Difference function via cross-correlation of the first half with the whole frame (FFT).
     const { ar, ai, br, bi } = this;
     const n = ar.length;
@@ -160,6 +183,11 @@ export class DetectorBank {
       running += d[tau];
       d[tau] = running > 0 ? (d[tau] * tau) / running : 1;
     }
+    return { d, tauMin, tauMax };
+  }
+
+  private yin(buf: Float32Array, sr: number): Estimate | null {
+    const { d, tauMin, tauMax } = this.cmndf(buf, sr);
     const ABS = 0.2;
     let best = -1;
     for (let tau = tauMin; tau < tauMax; tau++) {
@@ -176,6 +204,36 @@ export class DetectorBank {
     }
     const t = best + parabola(d[best - 1], d[best], d[best + 1] ?? d[best]);
     return { hz: sr / t, confidence: Math.max(0, Math.min(1, 1 - d[best])) };
+  }
+
+  /**
+   * pYIN's per-frame step (Mauch & Dixon 2014): instead of one YIN threshold, a distribution of
+   * thresholds; each local minimum of d' gets the probability that it would be YIN's pick.
+   */
+  pyinCandidates(buf: Float32Array, sr: number): { hz: number; p: number }[] {
+    const { d, tauMin, tauMax } = this.cmndf(buf, sr);
+    const out: { hz: number; p: number }[] = [];
+    let minPrev = Infinity; // smallest d' among earlier minima
+    let globalTau = -1;
+    for (let tau = tauMin + 1; tau < tauMax; tau++) {
+      if (!(d[tau] < d[tau - 1] && d[tau] <= d[tau + 1])) continue;
+      if (globalTau < 0 || d[tau] < d[globalTau]) globalTau = tau;
+      // Thresholds s with d'(τ) < s ≤ (all earlier minima) pick this minimum.
+      if (d[tau] < minPrev) {
+        const p = thresholdCdf(Math.min(1, minPrev)) - thresholdCdf(d[tau]);
+        if (p > 1e-4) out.push({ hz: sr / (tau + parabola(d[tau - 1], d[tau], d[tau + 1])), p });
+        minPrev = d[tau];
+      }
+    }
+    // Thresholds below every minimum: YIN falls back to the global minimum, trusted little.
+    if (globalTau >= 0) {
+      const p = 0.01 * thresholdCdf(d[globalTau]);
+      const hz = sr / (globalTau + parabola(d[globalTau - 1], d[globalTau], d[globalTau + 1]));
+      const same = out.find((c) => Math.abs(c.hz - hz) < 1e-6);
+      if (same) same.p += p;
+      else if (p > 1e-4) out.push({ hz, p });
+    }
+    return out.filter((c) => c.hz >= MIN_HZ && c.hz <= MAX_HZ);
   }
 
   // --- spectral methods ----------------------------------------------------
@@ -318,6 +376,154 @@ export class DetectorBank {
     for (let i = 1; i < vals.length - 1; i++) if (vals[i] > vals[best]) best = i;
     if (best === 0 || best === vals.length - 1 || vals[best] < 0.3) return hz;
     return sr / (lo - 1 + best + parabola(vals[best - 1], vals[best], vals[best + 1]));
+  }
+}
+
+// --- pYIN ----------------------------------------------------------------
+
+/** Threshold prior: Beta(2, 18) (mean 0.1) on 0.01..1, as a cumulative distribution. */
+const THRESHOLD_CDF = (() => {
+  const n = 100;
+  const pdf = Array.from({ length: n }, (_, i) => {
+    const x = (i + 1) / n;
+    return x * (1 - x) ** 17;
+  });
+  const total = pdf.reduce((a, b) => a + b, 0);
+  const cdf = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) cdf[i + 1] = cdf[i] + pdf[i] / total;
+  return cdf;
+})();
+
+/** Share of thresholds at or below s. */
+function thresholdCdf(s: number): number {
+  if (s <= 0) return 0;
+  if (s >= 1) return 1;
+  return THRESHOLD_CDF[Math.floor(s * 100)];
+}
+
+/** Pitch grid of the HMM: 20-cent bins (5 per semitone). */
+const BINS_PER_SEMITONE = 5;
+const MIDI_LO = 69 + 12 * Math.log2(MIN_HZ / 440);
+const N_BINS = Math.ceil((69 + 12 * Math.log2(MAX_HZ / 440) - MIDI_LO) * BINS_PER_SEMITONE) + 1;
+/** Largest pitch change between frames (≈15 ms apart), in bins: 5 semitones. */
+const MAX_STEP = 25;
+const SWITCH = 0.01; // voiced ↔ unvoiced
+/** How much the candidate probabilities are trusted (pYIN's "YIN trust"). */
+const TRUST = 0.5;
+/** Frames decided this many frames late: the line is fixed once later frames confirm it. */
+export const PYIN_LAG = 5;
+
+const binOf = (hz: number) => Math.round((69 + 12 * Math.log2(hz / 440) - MIDI_LO) * BINS_PER_SEMITONE);
+const binHz = (b: number) => 440 * 2 ** ((MIDI_LO + b / BINS_PER_SEMITONE - 69) / 12);
+
+/** Triangular log weights of a pitch step of −MAX_STEP..MAX_STEP bins. */
+const STEP_LOG = (() => {
+  const w = Array.from({ length: 2 * MAX_STEP + 1 }, (_, i) => MAX_STEP + 1 - Math.abs(i - MAX_STEP));
+  const total = w.reduce((a, b) => a + b, 0);
+  return w.map((x) => Math.log(x / total));
+})();
+
+interface PyinFrame {
+  time: number;
+  candidates: { hz: number; p: number }[];
+  /** Best predecessor state for each state. */
+  back: Int16Array;
+}
+
+/**
+ * Online pYIN: the candidates of each frame feed a hidden Markov model over pitch bins, each
+ * voiced or unvoiced, decoded with Viterbi over the last few frames (fixed-lag), so the output is
+ * the most plausible pitch line rather than each frame's own best guess.
+ */
+export class PYinTracker {
+  private delta = new Float64Array(2 * N_BINS);
+  private next = new Float64Array(2 * N_BINS);
+  private frames: PyinFrame[] = [];
+  private started = false;
+
+  reset(): void {
+    this.frames = [];
+    this.started = false;
+  }
+
+  /**
+   * Adds a frame (candidates empty for silence) and returns the decision for the frame PYIN_LAG
+   * frames back, or null while there aren't enough frames yet.
+   */
+  push(time: number, candidates: { hz: number; p: number }[]): { time: number; estimate: Estimate | null } | null {
+    const N = N_BINS;
+    // Observation log-probabilities.
+    const voicedSum = Math.min(0.99, candidates.reduce((a, c) => a + c.p, 0));
+    const obsV = new Float64Array(N).fill(-Infinity);
+    for (const c of candidates) {
+      const b = binOf(c.hz);
+      if (b < 0 || b >= N) continue;
+      const v = Math.log(TRUST * c.p);
+      obsV[b] = obsV[b] === -Infinity ? v : Math.log(Math.exp(obsV[b]) + TRUST * c.p);
+    }
+    const obsU = Math.log((1 - TRUST * voicedSum) / N);
+
+    const back = new Int16Array(2 * N);
+    if (!this.started) {
+      for (let b = 0; b < N; b++) {
+        this.delta[b] = Math.log(0.5 / N) + obsV[b];
+        this.delta[N + b] = Math.log(0.5 / N) + obsU;
+      }
+      this.started = true;
+    } else {
+      const stay = Math.log(1 - SWITCH);
+      const swap = Math.log(SWITCH);
+      for (let b = 0; b < N; b++) {
+        let bestV = -Infinity;
+        let argV = 0;
+        let bestU = -Infinity;
+        let argU = N;
+        const lo = Math.max(0, b - MAX_STEP);
+        const hi = Math.min(N - 1, b + MAX_STEP);
+        for (let a = lo; a <= hi; a++) {
+          const w = STEP_LOG[a - b + MAX_STEP];
+          const fromV = this.delta[a] + w;
+          const fromU = this.delta[N + a] + w;
+          // Into voiced b
+          const v1 = fromV + stay;
+          const v2 = fromU + swap;
+          if (v1 > bestV) (bestV = v1), (argV = a);
+          if (v2 > bestV) (bestV = v2), (argV = N + a);
+          // Into unvoiced b
+          const u1 = fromU + stay;
+          const u2 = fromV + swap;
+          if (u1 > bestU) (bestU = u1), (argU = N + a);
+          if (u2 > bestU) (bestU = u2), (argU = a);
+        }
+        this.next[b] = bestV + obsV[b];
+        this.next[N + b] = bestU + obsU;
+        back[b] = argV;
+        back[N + b] = argU;
+      }
+      // Keep the numbers in range.
+      let max = -Infinity;
+      for (let i = 0; i < 2 * N; i++) if (this.next[i] > max) max = this.next[i];
+      for (let i = 0; i < 2 * N; i++) this.delta[i] = this.next[i] - max;
+    }
+    this.frames.push({ time, candidates, back });
+    if (this.frames.length > PYIN_LAG + 1) this.frames.shift();
+    if (this.frames.length < PYIN_LAG + 1) return null;
+
+    // Backtrack from the best current state to the frame PYIN_LAG back.
+    let state = 0;
+    for (let i = 1; i < 2 * N; i++) if (this.delta[i] > this.delta[state]) state = i;
+    for (let k = this.frames.length - 1; k > 0; k--) state = this.frames[k].back[state];
+    const frame = this.frames[0];
+    if (state >= N) return { time: frame.time, estimate: null };
+    // The exact pitch: the frame's candidate in (or nearest to) the chosen bin.
+    let hz = binHz(state);
+    let nearest = Infinity;
+    for (const c of frame.candidates) {
+      const dist = Math.abs(binOf(c.hz) - state);
+      if (dist <= 1 && dist < nearest) (nearest = dist), (hz = c.hz);
+    }
+    const p = frame.candidates.reduce((a, c) => a + c.p, 0);
+    return { time: frame.time, estimate: { hz, confidence: Math.min(1, p) } };
   }
 }
 

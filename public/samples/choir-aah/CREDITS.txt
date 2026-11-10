@@ -1,0 +1,5 @@
+Choir "aah" samples (MIDI notes 36-96, one file per note, named by MIDI number).
+
+Source: FluidR3_GM soundfont by Frank Wen, instrument 53 "Choir Aahs",
+rendered to MP3 by the midi-js-soundfonts project (https://github.com/gleitz/midi-js-soundfonts).
+Licence: Creative Commons Attribution 3.0 (https://creativecommons.org/licenses/by/3.0/).

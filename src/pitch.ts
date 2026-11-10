@@ -1,4 +1,4 @@
-import { DETECTORS, DetectorBank, type DetectorId, type Estimate } from "./detectors";
+import { DETECTORS, DetectorBank, PYinTracker, type DetectorId, type Estimate } from "./detectors";
 
 export interface PitchSample {
   /** AudioContext time at which this sound reached the microphone (centre of the analysis window). */
@@ -39,6 +39,8 @@ export class PitchTracker {
   private timer = 0;
   private bank = new DetectorBank(2048);
   private buf = new Float32Array(2048);
+  private pyin = new PYinTracker();
+  private pyinOn = false;
   private history: (number | null)[] = [];
 
   constructor(private ctx: AudioContext) {}
@@ -54,6 +56,7 @@ export class PitchTracker {
     this.buf = new Float32Array(n);
     if (this.analyser) this.analyser.fftSize = n;
     this.history = [];
+    this.pyin.reset();
   }
 
   get active(): boolean {
@@ -83,6 +86,7 @@ export class PitchTracker {
     this.analyser.fftSize = this.bank.size;
     this.source.connect(this.analyser);
     this.history = [];
+    this.pyin.reset();
     this.timer = window.setInterval(() => this.poll(), 15);
   }
 
@@ -108,8 +112,15 @@ export class PitchTracker {
     let midi: number | null = null;
     this.bank.newFrame();
     const loud = level >= this.gate;
+
+    // pYIN decodes a few frames late; run it whenever it's selected or being compared.
+    const usePyin = this.method === "pyin" || !!this.onCompare;
+    if (usePyin && !this.pyinOn) this.pyin.reset();
+    this.pyinOn = usePyin;
+    const pyinOut = usePyin ? this.pyin.push(time, loud ? this.bank.pyinCandidates(this.buf, sr) : []) : null;
+
     const run = (id: DetectorId): MethodReading => {
-      const estimate = loud ? this.bank.detect(id, this.buf, sr) : null;
+      const estimate = id === "pyin" ? (pyinOut?.estimate ?? null) : loud ? this.bank.detect(id, this.buf, sr) : null;
       return { id, estimate, accepted: !!estimate && estimate.confidence >= this.thresholds[id] };
     };
     let mine: MethodReading;
@@ -119,6 +130,12 @@ export class PitchTracker {
       mine = all.find((r) => r.id === this.method)!;
     } else mine = run(this.method);
     if (mine.accepted) midi = 69 + 12 * Math.log2(mine.estimate!.hz / 440);
+
+    if (this.method === "pyin") {
+      // The decoded line is already smooth; report it at the time of the frame it describes.
+      if (pyinOut) this.onSample({ time: pyinOut.time, midi, level });
+      return;
+    }
     this.onSample({ time, midi: this.smooth(midi), level });
   }
 
@@ -131,6 +148,48 @@ export class PitchTracker {
     if (voiced.length < 3) return midi;
     return [...voiced].sort((a, b) => a - b)[1];
   }
+}
+
+/** Display smoothing of the pitch line: σ in seconds, and how far neighbours are taken into account. */
+const SMOOTH_SIGMA = 0.02;
+const SMOOTH_REACH = 0.05;
+
+/**
+ * Smooths a pitch line for drawing only (the analysis keeps the raw values): a Gaussian average
+ * (σ 20 ms) over neighbours within ±50 ms. Neighbours are left out when they are silent, lie in
+ * another `group` (e.g. a different target note, so steps stay sharp) or are more than a semitone
+ * away (a jump, not wobble).
+ */
+export function smoothTrace(
+  times: ArrayLike<number>,
+  values: ArrayLike<number | null>,
+  groups?: ArrayLike<unknown>,
+): (number | null)[] {
+  const n = values.length;
+  const out: (number | null)[] = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const v = values[i];
+    if (v === null) {
+      out[i] = null;
+      continue;
+    }
+    let sum = 0;
+    let wsum = 0;
+    for (const dir of [-1, 1]) {
+      for (let j = dir < 0 ? i : i + 1; j >= 0 && j < n; j += dir) {
+        const dt = Math.abs(times[j] - times[i]);
+        const u = values[j];
+        if (dt > SMOOTH_REACH || u === null) break;
+        if (groups && groups[j] !== groups[i]) break;
+        if (Math.abs(u - v) > 1) continue;
+        const w = Math.exp(-(dt * dt) / (2 * SMOOTH_SIGMA * SMOOTH_SIGMA));
+        sum += u * w;
+        wsum += w;
+      }
+    }
+    out[i] = sum / wsum;
+  }
+  return out;
 }
 
 const NAMES = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];

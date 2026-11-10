@@ -7,9 +7,27 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
+    <nav class="menubar" aria-label="Main">
+      <span class="brand">ptchmtch</span>
+      <div class="nav" id="nav">
+        <button data-page="score" title="Sing from a score">Score</button>
+        <button data-page="audiation" title="Hear a phrase, then sing it back">Audiation</button>
+        <button id="historyBtn" title="Your progress over time">History</button>
+        <button id="settingsBtn" title="Settings">Settings</button>
+      </div>
+      <span class="spacer"></span>
+      <button id="mic" class="btn" title="Microphone on/off (M)">
+        <span class="dot"></span> <span class="mic-label">Microphone</span>
+      </button>
+      <div class="readout" title="Pitch you are singing right now">
+        <div class="meter"><div id="level"></div></div>
+        <span id="live">—</span>
+      </div>
+    </nav>
+
+    <div id="pageScore" class="page page-score">
     <header class="bar">
       <div class="row">
-        <span class="brand">ptchmtch</span>
         <label class="btn">
           Open score…
           <input id="file" type="file" accept=".xml,.musicxml,.mxl" hidden />
@@ -22,28 +40,14 @@
               <select id="exExercise"></select>
             </div>
             <div class="field ex-param">
-              <label for="exVoice">Voice</label>
-              <select id="exVoice"></select>
-            </div>
-            <div class="field ex-param">
               <label for="exKey">Key</label>
               <select id="exKey"></select>
             </div>
-            <p class="muted ex-param">With movable-do solfège under the notes and piano chords (turn them down with Other parts).</p>
+            <p class="muted ex-param ex-satb">For soprano, alto, tenor, baritone and bass, each in its own range: pick yours under Your part. With movable-do solfège and piano chords.</p>
             <button id="exLoad" class="btn primary">Load</button>
           </div>
         </div>
         <span id="title" class="title"></span>
-        <span class="spacer"></span>
-        <button id="mic" class="btn" title="Microphone on/off (M)">
-          <span class="dot"></span> Microphone
-        </button>
-        <div class="readout" title="Pitch you are singing right now">
-          <div class="meter"><div id="level"></div></div>
-          <span id="live">—</span>
-        </div>
-        <button id="historyBtn" class="btn ghost" title="Scores of your complete run-throughs">History</button>
-        <button id="settingsBtn" class="btn ghost" title="Settings">Settings</button>
       </div>
 
       <div class="row controls" id="controls">
@@ -153,6 +157,111 @@
       <div id="countdown" class="countdown" hidden></div>
       <div id="toast" class="toast" hidden></div>
     </main>
+    </div>
+
+    <section id="echo" class="page echo" hidden>
+      <div class="echo-inner">
+      <div class="trainer-head">
+        <div>
+          <h2 id="ecTitle">Echo</h2>
+          <span id="ecContext" class="muted">Hear a short phrase, keep it in mind, sing it back</span>
+        </div>
+        <span class="spacer"></span>
+        <div class="seg" id="ecMode" role="group" aria-label="Mode">
+          <button data-mode="echo" title="Hear a phrase, sing it back">Echo</button>
+          <button data-mode="syllables" title="Read solfège syllables and sing them, without hearing them first">Syllables</button>
+        </div>
+        <button id="ecKey" class="btn ghost" title="Play the key again">Play key</button>
+        <button id="ecStart" class="btn primary" title="Start or stop (Enter)">Start</button>
+      </div>
+      <div class="trainer-detect echo-settings">
+        <label>Key <select id="ecKeySel"></select></label>
+        <label title="Minor is la-based: the same syllables as its relative major, with la as home">
+          <select id="ecTonality">
+            <option value="major">major</option>
+            <option value="minor">minor (la-based)</option>
+          </select>
+        </label>
+        <label>Voice <select id="ecVoice"></select></label>
+        <label>Level <select id="ecLevel"></select></label>
+        <label id="ecRefWrap" title="What you hear before each phrase of syllables">
+          Before each phrase
+          <select id="ecRef">
+            <option value="home">home note</option>
+            <option value="key">the key</option>
+            <option value="none">nothing</option>
+          </select>
+        </label>
+        <label>Phrase sound <select id="ecSound"></select></label>
+        <label><input id="ecSelf" type="checkbox" /> Rate yourself first</label>
+        <label>
+          Repeat until in tune
+          <select id="ecRepeats">
+            <option value="0">no</option>
+            <option value="1">up to 1×</option>
+            <option value="2">up to 2×</option>
+            <option value="3">up to 3×</option>
+            <option value="5">up to 5×</option>
+          </select>
+        </label>
+        <label title="Also repeat the phrase when a note is in tune but unsteady. 1 allows a little wobble, 3 is strict; an even vibrato never counts as wobble.">
+          Repeat on wobble
+          <select id="ecWobble">
+            <option value="0">off</option>
+            <option value="1">1 (lenient)</option>
+            <option value="2">2</option>
+            <option value="3">3 (strict)</option>
+          </select>
+        </label>
+        <label title="Also repeat the phrase when a note slides into its pitch instead of starting on it. 1 allows 0.3 s, 2 0.2 s, 3 (strict) 0.12 s.">
+          Repeat on slide
+          <select id="ecSlide">
+            <option value="0">off</option>
+            <option value="1">1 (lenient)</option>
+            <option value="2">2</option>
+            <option value="3">3 (strict)</option>
+          </select>
+        </label>
+        <label><input id="ecAuto" type="checkbox" /> Continue automatically</label>
+      </div>
+      <div class="echo-main">
+      <div class="echo-map">
+        <canvas id="ecMap"></canvas>
+        <button id="ecMapReset" class="btn ghost" title="Forget the note map">Reset</button>
+      </div>
+      <div id="ecStage" class="echo-stage" tabindex="-1">
+        <div id="ecLevelInfo" class="muted"></div>
+        <div id="ecPhase" class="echo-phase"></div>
+        <div id="ecDots" class="echo-dots"></div>
+        <div id="ecSyl" class="echo-syl" hidden></div>
+        <div id="ecHint" class="muted echo-hint"></div>
+        <div id="ecMeterWrap" class="echo-meter"><div id="ecMeter"></div></div>
+        <button id="ecDone" class="btn">Done</button>
+        <div id="ecRate" class="echo-rate">
+          <button class="btn" data-rate="flat">Flat</button>
+          <button class="btn" data-rate="in tune">In tune</button>
+          <button class="btn" data-rate="sharp">Sharp</button>
+          <button class="btn" data-rate="wrong notes">Wrong notes</button>
+        </div>
+        <div id="ecResult" class="echo-result">
+          <div id="ecResultBody"></div>
+          <canvas id="ecCanvas"></canvas>
+          <div class="echo-actions">
+            <button id="ecAgain" class="btn ghost" title="Hear the same phrase again and sing it once more (Space)">Practice again</button>
+            <button id="ecSkip" class="btn ghost" title="Move on to a new phrase">New phrase</button>
+            <button id="ecNext" class="btn primary" title="Next round (Enter)">Next round</button>
+          </div>
+        </div>
+      </div>
+      </div>
+      <p id="ecStats" class="muted"></p>
+      <p class="note">
+        No pitch is shown while you sing, so you judge by ear. The bar on the left shows how well each note has gone
+        (red → yellow → green; first tries only; hover for details). The level goes up after 3 right rounds in a row and down
+        after 2 wrong ones; a note counts as right within 50 cents, and as in tune within your tolerance (Settings).
+      </p>
+      </div>
+    </section>
 
     <dialog id="trainer" class="trainer">
       <div class="trainer-head">
@@ -211,13 +320,14 @@
           <button data-tab="runs">Run-throughs</button>
           <button data-tab="loops">Loop practice</button>
           <button data-tab="notes">Long notes</button>
+          <button data-tab="echo">Echo</button>
+          <button data-tab="syllables">Syllables</button>
         </div>
       </div>
       <p id="historyFor" class="muted"></p>
       <div id="historyBody"></div>
       <p class="note"><span id="historyNote"></span> History is stored in this browser only.</p>
       <div class="actions">
-        <button id="historyClear" class="btn ghost">Clear history</button>
         <span class="spacer"></span>
         <button id="historyClose" class="btn primary">Close</button>
       </div>
@@ -257,6 +367,13 @@
           Microphone
           <select id="device"><option value="">Default input</option></select>
         </label>
+        <div class="stack">
+          Playback sound
+          <div class="sound-row">
+            <label>Your part <select id="soundMine"></select></label>
+            <label>Other parts <select id="soundOthers"></select></label>
+          </div>
+        </div>
         <div class="stack">
           Pitch detection
           <div class="detect-row">

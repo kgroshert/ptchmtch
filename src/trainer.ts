@@ -1,6 +1,6 @@
 import { centsOff, statusColor, type Settings } from "./analysis";
 import type { TrainerSession } from "./history";
-import { midiName, type PitchSample } from "./pitch";
+import { midiName, smoothTrace, type PitchSample } from "./pitch";
 import { analyseVibrato, describeVibrato, oscillates, type PitchPoint } from "./vibrato";
 
 export interface TrainerTarget {
@@ -313,14 +313,23 @@ export class PitchTrainer {
     ctx.textBaseline = "middle";
     ctx.lineWidth = 3;
     ctx.lineCap = "round";
-    for (let i = 1; i < pts.length; i++) {
-      const a = pts[i - 1];
-      const b = pts[i];
-      if (a.cents === null || b.cents === null || b.time - a.time > 0.1 || x(a.time) < LEFT) continue;
-      ctx.strokeStyle = statusColor(this.classify(b.judged ?? b.cents));
+    // Drawn smoothed (in semitones, so wobble within a semitone is averaged); judged values stay raw.
+    const first = Math.max(0, pts.findIndex((p) => x(p.time) >= LEFT) - 5);
+    const shown = pts.slice(first);
+    const line = smoothTrace(
+      shown.map((p) => p.time),
+      shown.map((p) => (p.cents === null ? null : p.cents / 100)),
+    );
+    for (let i = 1; i < shown.length; i++) {
+      const a = shown[i - 1];
+      const b = shown[i];
+      const ya = line[i - 1];
+      const yb = line[i];
+      if (ya === null || yb === null || b.time - a.time > 0.1 || x(a.time) < LEFT) continue;
+      ctx.strokeStyle = statusColor(this.classify(b.judged ?? b.cents!));
       ctx.beginPath();
-      ctx.moveTo(x(a.time), y(a.cents));
-      ctx.lineTo(x(b.time), y(b.cents));
+      ctx.moveTo(x(a.time), y(ya * 100));
+      ctx.lineTo(x(b.time), y(yb * 100));
       ctx.stroke();
     }
 
@@ -339,7 +348,8 @@ export class PitchTrainer {
     } else {
       ctx.fillStyle = statusColor(this.classify(cents));
       ctx.beginPath();
-      ctx.arc(x(last.time), y(last.cents ?? cents), 6, 0, Math.PI * 2);
+      const lastShown = line[line.length - 1];
+      ctx.arc(x(last.time), y(lastShown !== null && lastShown !== undefined ? lastShown * 100 : (last.cents ?? cents)), 6, 0, Math.PI * 2);
       ctx.fill();
       big.textContent = `${cents > 0 ? "+" : ""}${Math.round(cents)}¢`;
       big.style.color = statusColor(this.classify(cents));

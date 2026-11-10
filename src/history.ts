@@ -59,11 +59,38 @@ export interface TrainerSession {
   vibrato: Vibrato | null;
 }
 
+/** A session in the Echo trainer (first tries of each phrase only). */
+export interface EchoSession {
+  date: number;
+  /** e.g. "D major · Baritone" */
+  context: string;
+  rounds: number;
+  /** Phrases with every note right (within 50 cents). */
+  right: number;
+  /** Phrases with every note in tune. */
+  inTune: number;
+  /** Levels, 1-based: at the start, at the end, and the highest reached. */
+  startLevel: number;
+  endLevel: number;
+  topLevel: number;
+  /** Mean absolute deviation of the notes sung right, cents (null if none). */
+  meanAbsCents: number | null;
+  /** Mean time those notes took to settle (landing), seconds; absent in sessions recorded before it existed. */
+  meanLanding?: number | null;
+  /** Rounds rated before seeing the result, and how many of those matched it. */
+  rated: number;
+  agreed: number;
+  minutes: number;
+  toleranceCents: number;
+}
+
 const MAX_ROWS = 1000;
 
 export const runsKey = (song: string, track: string) => `ptchmtch.history.${song}.${track}`;
 export const loopsKey = (song: string, track: string) => `ptchmtch.loops.${song}.${track}`;
 export const TRAINER_KEY = "ptchmtch.trainer";
+export const ECHO_KEY = "ptchmtch.echo.sessions";
+export const SYL_KEY = "ptchmtch.syllables.sessions";
 
 export function loadRows<T>(key: string): T[] {
   try {
@@ -99,9 +126,12 @@ export function upsertRow<T>(key: string, same: (r: T) => boolean, row: T): T[] 
   return rows;
 }
 
-export function clearRows(key: string): void {
+/** Removes the row recorded at `date` (rows are told apart by their time, to the millisecond). */
+export function deleteRow(key: string, date: number): void {
+  const rows = loadRows<{ date: number }>(key).filter((r) => r.date !== date);
   try {
-    localStorage.removeItem(key);
+    if (rows.length) localStorage.setItem(key, JSON.stringify(rows));
+    else localStorage.removeItem(key);
   } catch {
     /* storage unavailable */
   }
@@ -208,12 +238,46 @@ export const TRAINER_VIEW: View<TrainerSession> = {
   ],
 };
 
+export const ECHO_VIEW: View<EchoSession> = {
+  empty: "No Echo sessions yet. Open Audiation in the menu bar and sing a few rounds.",
+  metrics: [
+    { label: "Phrases right", unit: "%", value: (r) => (r.right / r.rounds) * 100, better: "higher", range: [0, 100] },
+    { label: "Phrases in tune", unit: "%", value: (r) => (r.inTune / r.rounds) * 100, better: "higher", range: [0, 100] },
+    { label: "Highest level", unit: "", value: (r) => r.topLevel, better: "higher", range: [1, 12] },
+    { label: "Mean deviation", unit: "¢", value: (r) => r.meanAbsCents, better: "lower" },
+    { label: "Landing time", unit: " s", value: (r) => r.meanLanding, better: "lower", digits: 2 },
+    { label: "Own rating matched", unit: "%", value: (r) => (r.rated ? (r.agreed / r.rated) * 100 : null), better: "higher", range: [0, 100] },
+  ],
+  columns: [
+    { label: "When", cell: (r) => fmtDate(r.date) },
+    { label: "Key · voice", cell: (r) => r.context },
+    { label: "Rounds", cell: (r) => `${r.rounds} <small>${num(r.minutes, 0, " min")}</small>` },
+    { label: "Right", cell: (r) => `${pct(r.right / r.rounds)} <small>${r.right}/${r.rounds}</small>`, strong: true },
+    { label: "In tune", cell: (r) => `${pct(r.inTune / r.rounds)} <small>±${r.toleranceCents}¢</small>` },
+    { label: "Level", cell: (r) => (r.startLevel === r.endLevel ? `${r.endLevel}` : `${r.startLevel} → ${r.endLevel}`) + (r.topLevel > Math.max(r.startLevel, r.endLevel) ? ` <small>(top ${r.topLevel})</small>` : "") },
+    { label: "Mean dev.", cell: (r) => num(r.meanAbsCents, 0, "¢") },
+    { label: "Landing", cell: (r) => num(r.meanLanding, 2, " s") },
+    { label: "Own rating", cell: (r) => (r.rated ? `${pct(r.agreed / r.rated)} <small>${r.agreed}/${r.rated}</small>` : "–") },
+  ],
+};
+
+/** Sessions of the Syllables mode: the same measures, on its own (shorter) ladder of levels. */
+export const SYL_VIEW: View<EchoSession> = {
+  ...ECHO_VIEW,
+  empty: "No Syllables sessions yet. Open Audiation, switch to Syllables and sing a few rounds.",
+  metrics: ECHO_VIEW.metrics.map((m) => (m.label === "Highest level" ? { ...m, range: [1, 9] as [number, number] } : m)),
+};
+
 function osc(v: Vibrato | null): boolean {
   return !!v && (v.kind === "vibrato" || v.kind === "wobble" || v.kind === "fast");
 }
 
-/** Renders a metric picker, a chart of that metric over time and a table (newest first). */
-export function renderView<T extends { date: number }>(el: HTMLElement, rows: T[], view: View<T>, metricIndex = 0): void {
+/**
+ * Renders the rows stored under `key`: a metric picker, a chart of that metric over time and a
+ * table (newest first), each row with a button to delete it.
+ */
+export function renderView<T extends { date: number }>(el: HTMLElement, key: string, view: View<T>, metricIndex = 0): void {
+  const rows = loadRows<T>(key);
   el.innerHTML = "";
   if (!rows.length) {
     const p = document.createElement("p");
@@ -227,18 +291,32 @@ export function renderView<T extends { date: number }>(el: HTMLElement, rows: T[
   bar.className = "history-bar";
   const sel = document.createElement("select");
   view.metrics.forEach((m, i) => sel.append(new Option(m.label, String(i), i === metricIndex, i === metricIndex)));
-  sel.addEventListener("change", () => renderView(el, rows, view, +sel.value));
+  sel.addEventListener("change", () => renderView(el, key, view, +sel.value));
   bar.append("Chart: ", sel);
   el.append(bar);
   el.append(chart(rows, view.metrics[metricIndex]));
 
   const table = document.createElement("table");
   table.className = "history-table";
-  table.innerHTML = `<thead><tr>${view.columns.map((c) => `<th>${c.label}</th>`).join("")}</tr></thead>`;
+  table.innerHTML = `<thead><tr>${view.columns.map((c) => `<th>${c.label}</th>`).join("")}<th></th></tr></thead>`;
   const body = document.createElement("tbody");
   for (const r of [...rows].reverse()) {
     const tr = document.createElement("tr");
     tr.innerHTML = view.columns.map((c) => `<td${c.strong ? ' class="score"' : ""}>${c.cell(r)}</td>`).join("");
+    const td = document.createElement("td");
+    const del = document.createElement("button");
+    del.className = "row-delete";
+    del.title = "Delete this entry";
+    del.setAttribute("aria-label", "Delete this entry");
+    del.innerHTML =
+      '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9.5h6.6L12 4M6.8 6.5v4.5M9.2 6.5v4.5"/></svg>';
+    del.addEventListener("click", () => {
+      if (!confirm(`Delete the entry from ${fmtDate(r.date)}?`)) return;
+      deleteRow(key, r.date);
+      renderView(el, key, view, metricIndex);
+    });
+    td.append(del);
+    tr.append(td);
     body.append(tr);
   }
   table.append(body);

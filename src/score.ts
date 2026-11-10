@@ -60,6 +60,9 @@ export class Score {
 
   private cursorBeats: number[] = [];
   private cursorIndex = 0;
+  /** The quarter the cursor shows, and its position at its note or rest (before moving on by beats). */
+  private cursorQuarter = -1;
+  private cursorLeft = 0;
   /** Notehead centres in OSMD units, one per rendered note (chord notes separately). */
   private heads: { x: number; y: number; ev: NoteEvent }[] = [];
 
@@ -144,6 +147,8 @@ export class Score {
     }
     this.osmd.cursor.reset();
     this.cursorIndex = 0;
+    this.cursorQuarter = -1;
+    this.cursorLeft = parseFloat(this.osmd.cursor.cursorElement?.style.left || "0");
 
     this.heads = [];
     for (const t of this.tracks)
@@ -212,20 +217,42 @@ export class Score {
 
   // --- cursor -------------------------------------------------------------
 
+  /**
+   * Moves the cursor to `beat` (in quarters): to the note or rest sounding there, and on in quarter
+   * steps through long notes and rests, so it keeps the beat.
+   */
   setCursorBeat(beat: number): void {
     let target = 0;
     while (target + 1 < this.cursorBeats.length && this.cursorBeats[target + 1] <= beat + 1e-6) target++;
-    if (target === this.cursorIndex) return;
+    const entryBeat = this.cursorBeats[target] ?? 0;
+    const quarter = Math.max(entryBeat, Math.floor(beat + 1e-6));
+    if (target === this.cursorIndex && quarter === this.cursorQuarter) return;
     const cursor = this.osmd.cursor;
-    if (target < this.cursorIndex) {
-      cursor.reset();
-      this.cursorIndex = 0;
+    if (target !== this.cursorIndex || this.cursorQuarter < 0) {
+      if (target < this.cursorIndex) {
+        cursor.reset();
+        this.cursorIndex = 0;
+      }
+      while (this.cursorIndex < target) {
+        cursor.Iterator.moveToNext();
+        this.cursorIndex++;
+      }
+      cursor.update();
+      this.cursorLeft = parseFloat(cursor.cursorElement.style.left || "0");
     }
-    while (this.cursorIndex < target) {
-      cursor.Iterator.moveToNext();
-      this.cursorIndex++;
+    this.cursorQuarter = quarter;
+    let left = this.cursorLeft;
+    if (quarter > entryBeat + 1e-6) {
+      // Shift by the distance between the two time points on the line, if they're on the same one.
+      const g = this.osmd.GraphicSheet;
+      const ts = cursor.Iterator.currentTimeStamp;
+      const Frac = ts.constructor as new (n: number, d: number) => typeof ts;
+      const at = (b: number) => g.calculateXPositionFromTimestamp(new Frac(Math.round(b * 48), 192));
+      const [x0, sys0] = at(entryBeat);
+      const [x1, sys1] = at(quarter);
+      if (sys0 && sys0 === sys1 && x1 > x0) left += (x1 - x0) * 10 * this.osmd.zoom;
     }
-    cursor.update();
+    cursor.cursorElement.style.left = `${left}px`;
   }
 
   // --- geometry -----------------------------------------------------------

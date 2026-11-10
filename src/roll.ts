@@ -1,5 +1,5 @@
 import { centsOff, statusColor, type NoteResult, type Settings, type TakeSample } from "./analysis";
-import { midiName } from "./pitch";
+import { midiName, smoothTrace } from "./pitch";
 import { describeVibrato } from "./vibrato";
 import type { Measure, NoteEvent, Track } from "./score";
 
@@ -93,8 +93,12 @@ export class PitchRoll {
   draw(model: RollModel): void {
     this.model = model;
     if (this.follow && model.playhead !== null) {
+      // Scroll continuously, keeping the playhead at 30% of the width once it gets there; jump
+      // when it leaves the view (loop restart, new selection).
       const vb = this.visibleBeats;
-      if (model.playhead > this.viewStart + vb * 0.75 || model.playhead < this.viewStart) this.reveal(model.playhead);
+      const p = model.playhead;
+      if (p < this.viewStart || p > this.viewStart + vb) this.reveal(p);
+      else if (p > this.viewStart + vb * 0.3) this.viewStart = p - vb * 0.3;
     }
     this.paint();
   }
@@ -330,22 +334,35 @@ export class PitchRoll {
     ctx.lineWidth = width;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
+    // Visible samples, with their target notes, smoothed for drawing (steps between notes stay sharp).
+    const vis = samples.filter((s) => s.beat >= b0 && s.beat <= b1);
+    const targets = vis.map((s) => (s.midi === null ? null : targetAt(events, s.beat, s.midi)));
+    // A loop restart jumps back in beats: treat each pass as its own run.
+    let pass = 0;
+    const runs = vis.map((s, i) => (i && s.beat < vis[i - 1].beat ? ++pass : pass));
+    const smooth = smoothTrace(
+      vis.map((s) => s.time),
+      vis.map((s) => s.midi),
+      targets.map((t, i) => `${runs[i]}:${t?.id ?? "-"}`),
+    );
     let prev: { x: number; y: number; beat: number } | null = null;
-    for (const s of samples) {
-      if (s.beat < b0 || s.beat > b1 || s.midi === null) {
+    for (let i = 0; i < vis.length; i++) {
+      const s = vis[i];
+      const midi = smooth[i];
+      if (midi === null) {
         prev = null;
         continue;
       }
-      const target = targetAt(events, s.beat, s.midi);
-      let shown = s.midi;
+      const target = targets[i];
+      let shown = midi;
       let cents: number | null = null;
       if (target) {
-        cents = centsOff(s.midi, target.midi, m.settings.octaveFree);
+        cents = centsOff(midi, target.midi, m.settings.octaveFree);
         if (m.settings.octaveFree) shown = target.midi + cents / 100;
       }
       const x = this.beatToX(s.beat);
       const y = yOf(shown);
-      if (prev && s.beat - prev.beat < 0.25 && Math.abs(y - prev.y) < maxJump) {
+      if (prev && s.beat - prev.beat < 0.25 && s.beat >= prev.beat && Math.abs(y - prev.y) < maxJump) {
         ctx.strokeStyle = color(cents);
         ctx.beginPath();
         ctx.moveTo(prev.x, prev.y);

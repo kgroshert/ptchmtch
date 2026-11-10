@@ -13,25 +13,56 @@ Open http://localhost:5173 in Chrome, Edge, Firefox or Safari. The browser only 
 
 ## Using it
 
-- **Open score…** (or drag a file onto the score area) loads `.musicxml`, `.xml` or compressed `.mxl`. **Practice scores ▾** generates an exercise for your voice type (soprano, alto, tenor or bass) in any key:
-  - *Scales*: major, natural minor, harmonic minor and chromatic, one octave up and down.
+The menu bar has two pages, **Score** (singing from a score: everything below) and **Audiation** (the Echo trainer, with its Syllables mode), plus **History** and **Settings**, which open over either page, and the **Microphone** toggle with a live level and pitch. The app reopens on the page you used last. History opens on the tab that fits the page: Echo or Syllables on Audiation, the current score's run-throughs on Score.
+
+- **Open score…** (or drag a file onto the score area) loads `.musicxml`, `.xml` or compressed `.mxl`. **Practice scores ▾** generates an exercise in any key, written out for soprano, alto, tenor, baritone (A2–E4, between tenor and bass) and bass (each in the comfortable middle of its range) plus piano. Choose your voice under **Your part**; the app remembers it for the next exercise:
+  - *Scales*: major, natural minor, harmonic minor and chromatic, one octave up, a half rest, and back down.
   - *Warm-ups*: the five-note scale (1-2-3-4-5-4-3-2-1) and arpeggios (1-3-5-8-5-3-1), major and minor, each sung twice.
+  - *Triplets* (three notes to a beat): the five-note scale, stepping groups (1-2-3, 2-3-4 … up to the octave and back down), the arpeggio, the octave scale, and the 1.5-octave scale (up to the 5th above the octave and back; the final do is held over into the next beat).
   - *Pieces*: a short SATB chorale.
 
-  The notes are placed in the comfortable middle of the voice's range. Each exercise has movable-do solfège under the notes (minor is la-based: la ti do re mi fa sol, with si for the raised 7th; the chromatic scale uses di ri fi si li going up and te le se me ra going down) and a piano part with simple I, IV and V chords (a held tonic chord under the chromatic scale). Turn the piano down with **Other parts**, or hide it from the score with **Only my part**. Each exercise, voice and key keeps its own history.
+  Every exercise starts with a half rest, to breathe and find the first note.
+
+  Each exercise has movable-do solfège under the notes (minor is la-based: la ti do re mi fa sol, with si for the raised 7th; the chromatic scale uses di ri fi si li going up and te le se me ra going down) and a piano part with simple I, IV and V chords (a held tonic chord under the chromatic scale). Turn the piano down with **Other parts**, or hide it from the score with **Only my part**. Each exercise and key keeps its own history per part.
 - **Play / Pause** (Space): Play continues from where you paused, at the start of that beat, and the run or loop statistics carry on. **⏮** (Home) jumps back to the start of the selection without starting or stopping playback. Changing the part or the bars also starts over from the beginning.
-- **Your part** lists every part, and every voice within a part, that contains notes. The selected part is coloured blue in the score.
+- **Your part** lists every part, and every voice within a part, that contains notes. The selected part is coloured blue in the score. While playing, the cursor moves on every beat, also through long notes and rests.
 - **Your part in playback**: *Loud* to learn the notes, *Normal* to sing with it, *Muted* to test yourself. **Other parts** sets the volume of the accompaniment.
 - **Tempo** slows the playback down (or speeds it up) without changing pitch.
 - **Bars**: type the first and last bar to practise, or drag across the bar numbers above the pitch graph. **All** selects the whole piece. Clicking in the score doesn't change the selection, so double-clicking a note only opens the trainer. **Loop** repeats the selection.
 - **Loop** is off whenever you open the app.
 - **Only my part** hides the other parts' staves in the score, for more room. For a voice inside a piano part, only the staff it is written on is kept.
-- **Pitch graph**: drag the handle between the score and the graph to make the graph taller (double-click it to reset). **↕ Fit** fits the pitch axis to the notes in view, for taller rows and thicker lines; switch it off to see the part's whole range. The mouse wheel scrolls in time and ⌘/Ctrl + wheel zooms in time. To zoom the pitch axis, use the wheel over the note names, or ⌥/Alt + wheel anywhere; drag the note names to move up or down, and double-click them to reset.
+- **Pitch graph**: while playing, the graph scrolls along with the music, keeping the playhead at about a third of its width. The line is drawn lightly smoothed (over about 50 ms, never across a change of note), so it shows the pitch you're heard at rather than every wobble; scoring uses the unsmoothed pitch. Drag the handle between the score and the graph to make the graph taller (double-click it to reset). **↕ Fit** fits the pitch axis to the notes in view, for taller rows and thicker lines; switch it off to see the part's whole range. The mouse wheel scrolls in time and ⌘/Ctrl + wheel zooms in time. To zoom the pitch axis, use the wheel over the note names, or ⌥/Alt + wheel anywhere; drag the note names to move up or down, and double-click them to reset.
 - **Hide graph while playing** (G) gives the score the whole window during playback. The graph comes back when playback ends or you pause.
 - **Count-in** gives one bar of clicks before playback starts; **Starting note** plays your first note during the count-in.
 - **Microphone** (M) turns on pitch detection. The readout next to it works as a tuner even when nothing is playing.
 
 Keyboard: `Space` plays or pauses, `Home` jumps back to the start, `L` toggles looping, `M` turns the microphone on or off, `G` toggles hiding the graph.
+
+### Echo trainer (audiation)
+
+The **Audiation** page (the Echo trainer) trains hearing a phrase in your head and singing it back:
+
+1. The piano plays the key once (I–IV–V–I), then there is a short silence.
+2. **Listen**: a short phrase plays (piano by default; change it under *Phrase sound*).
+3. **Hold it in your mind**: a silence of 1.5–4 s, longer at higher levels (other notes in between would disturb the memory; silence doesn't).
+4. **Sing it back**, in your own time. Only the notes count, not when you start or how long each note is: the answer is split into the phrase's notes wherever they fall, and each note is judged on its steady middle (the way into and out of it is left out). The answer ends after about a second of silence, or press Enter / **Done**.
+5. The result: each note right and in tune (within your tolerance), right but out of tune (within 50 cents), or wrong (with the note you sang), plus your line against the targets. The phrase plays again so you can compare. If not every note was in tune, the same phrase comes again, up to 3 more times (*Repeat until in tune*; **New phrase** skips ahead). With **Repeat on wobble** (off, 1 lenient, 2, 3 strict) a note that is in tune but unsteady also brings the phrase back. Steadiness is measured without the way into and out of the note: the spread of the pitch around its centre and the largest swing away from it (level 1 allows a spread of ±22¢ and a swing of 70¢, level 2 ±14¢ and 50¢, level 3 ±9¢ and 35¢). An even vibrato never counts as wobble. A wobbly note is marked orange with its spread. **Repeat on slide** works the same way for landing: how long a note takes from its start until it settles within ±20¢ (or your tolerance, if wider) of its pitch for 0.1 s, and whether it came from above or below. Only a start at least 40¢ off counts as sliding in; level 1 allows 0.3 s, level 2 0.2 s, level 3 0.12 s. The note card then says e.g. "slid in from above · 0.4 s" (any slide over 0.3 s is shown even with the setting off), and the Echo history tracks the average landing time. **Practice again** (Space) runs one more listen-and-sing round on the same phrase whenever you like. Unticking *Continue automatically* takes effect at once, so you can stay on a phrase and practise it by hand; **Next round** (Enter) moves on.
+
+No pitch is shown while you sing, so you learn to judge by ear (live feedback helps at first but makes you depend on it). With **Rate yourself first** you say how it sounded (flat, in tune, sharp, wrong notes) before you see the result, and the session counts how often you heard it right.
+
+The level adapts: 3 right rounds in a row move you up, 2 wrong ones down (or pick a fixed level). On a new day it starts again at level 1 and warms up: each right round moves straight up a level until you're back where you left off, after which the usual rule applies. Levels go from single notes through 2–5 notes, from steps to thirds and leaps, then chord outlines (do-mi-sol, sol-ti-re, la-do-mi …) and scale runs, and longer silences. The phrases are in the key you choose, major or minor, in your voice's range, and new every round. Minor is la-based: the same syllables as its relative major, so a phrase in minor centres on la; the key is played as i–iv–V–i, with the raised si in the V chord. The level and settings are remembered in this browser.
+
+### Syllables (solfège)
+
+**Syllables**, switched at the top right of the Audiation page, trains movable-do solfège the other way round from Echo: you see the syllables and sing them without hearing them first. The key plays once at the start; then for each phrase:
+
+1. *Before each phrase*: the home note plays (do in major, la in minor), or the whole key, or nothing.
+2. **Read it**: the syllables appear with Curwen's hand signs, each raised by its pitch as the hand rises with the tones (low and high octaves are marked). Hear them in your head.
+3. **Sing it**, after a moment, or at once with Enter. The syllables stay up while you sing. Judging, repeats, wobble and slide work as in Echo, and afterwards the phrase plays so you hear how it should have sounded.
+
+Its levels follow the Kodály order of tone sets: sol mi; sol mi la; do mi sol la; the pentatonic do re mi sol la; with low la and low sol; up to high do with leaps; adding fa; adding ti (the whole scale); the whole scale with leaps. From the third level on, phrases often end on the home tone. Syllables has its own level (with the same new-day warm-up) and its own History tab; the note map is shared.
+
+The **note map** on the left is a bar from red through yellow to green for each pitch in your range: how well that note has gone over its last 20 or so tries (1 in tune, falling to ½ at 50 cents off, 0 for a wrong or missed note). It counts first tries only, since a repeated phrase has been heard more often; notes tried only a few times are faint. Hover for the numbers; **Reset** clears it.
 
 ### Pitch trainer
 
@@ -63,11 +94,13 @@ When you loop a section, each note's pitch is compared across passes. **Precisio
 
 ### History
 
-**History** has three tabs. Each one has a chart where you can pick the metric, plus a table. Charts with a typical healthy range show it as a shaded band.
+**History** has five tabs. Each one has a chart where you can pick the metric, plus a table; the bin icon at the end of a row deletes that entry (e.g. a test). Charts with a typical healthy range show it as a shaded band.
 
 - **Run-throughs**: each time you sing the whole piece to the end with the microphone on. Metrics: score (0–100), share in tune (by note length), mean deviation, clean onsets, vibrato rate, width and regularity, and the share of notes with a wobble. A message after each run compares it with the last one.
 - **Loop practice**: recorded when you stop after at least three passes of a loop. Metrics: accuracy of your best pass (average deviation; passes with fewer than 80% of the notes sung don't count) and spread between passes (precision). The message compares it with your last session on the same bars.
 - **Long notes**: every note practised in the trainer for at least 2 seconds of singing, across all pieces. Metrics: share in tune, longest hold, mean deviation and vibrato.
+- **Syllables**: the same, for the Syllables mode, on its own ladder of 9 levels.
+- **Echo**: each Echo trainer session with at least one round, saved when you stop, close the trainer, change key or voice, or leave the page. Counts first tries only. Metrics: share of phrases right (every note within 50 cents) and in tune, highest level, mean deviation and landing time of the right notes, and how often your own rating matched.
 
 Each note in a run scores up to 100 points:
 
@@ -107,24 +140,28 @@ When a result looks wrong, **Diagnose** (above the pitch graph) checks the last 
 - **Ignore 8va / 8vb marks**: plays and scores notes under octave marks as written, without the octave shift. Use it when a mark is only there for readability, or is a mistake in the score. History is unaffected.
 - **Latency correction**: lines up your pitch line with the notes. Use **Calibrate…** to measure it (see below), or adjust it by hand if your line always looks a little late or early.
 - **Microphone**: choose the input device.
+- **Playback sound**: the instrument for your part and for the other parts: piano (default), soft tone, organ, strings, or a choir singing "aah". Piano and choir are recorded (see Credits); the others are synthesised in the browser. The trainer's **Play note** and the starting note use your part's sound (the soft tone instead of piano, since a piano note dies away).
 - **Pitch detection → Change…**: choose how pitch is detected (see below).
 
 Use headphones. With speakers, the microphone also picks up the playback.
 
 ### Pitch detection
 
-Four methods are available. While the dialog is open, all four run on your voice side by side: the table shows each one's note, its confidence (with a mark at its threshold) and the share of the last 3 seconds of sound it detected. Click a row to use that method.
+Five methods are available. While the dialog is open, all of them run on your voice side by side: the table shows each one's note, its confidence (with a mark at its threshold) and the share of the last 3 seconds of sound it detected. Click a row to use that method.
 
 | Method | How it works | Good for |
 | --- | --- | --- |
 | **McLeod (MPM)** (default) | Normalised autocorrelation | Clean, steady singing; the most precise and the fastest. |
 | **YIN** | Normalised difference function | Voice in general; a little more tolerant of breathy or uneven sound. |
+| **pYIN** | Probabilistic YIN: every plausible pitch per frame, then the most likely line over time (hidden Markov model) | Singing with octave flicker or stray readings, e.g. a weak fundamental in low or soft notes. Shows the pitch about 75 ms late (timing is still scored correctly). |
 | **Harmonic spectrum** | Finds the note whose harmonics carry most of the energy | Buzzy or noisy sounds such as lip trills, tongue trills and breathy tone. |
 | **Cepstrum** | Finds the regular spacing of the harmonics | Also buzzy sounds; needs a rich tone, so it misses very low, pure notes. |
 
 The pitch trainer has the same settings in a row under its title (method, minimum confidence, window), so you can switch while practising a note; both places stay in sync. Each method has its own **minimum confidence**: lower it to fill gaps, raise it if stray readings appear. The **analysis window** trades response time against steadiness: 1024 samples reacts fastest but can't follow notes below about 100 Hz; 4096 is steadiest and best for low voices.
 
-A lip trill makes the sound flutter on and off about 20–30 times a second, with breath noise in between, so the autocorrelation methods see too little regularity and reject it. In tests with a synthetic lip trill, McLeod detected almost none of it, YIN about half, and both spectral methods nearly all, while all four stayed within a few cents on steady tone. Recordings loaded onto the pitch graph are still analysed with McLeod.
+A lip trill makes the sound flutter on and off about 20–30 times a second, with breath noise in between, so the autocorrelation methods see too little regularity and reject it. pYIN (Mauch & Dixon, 2014) is the established choice for transcribing singing. Instead of trusting each frame's best guess, it keeps every candidate pitch with a probability and decodes the most plausible line, deciding each frame 5 frames (about 75 ms) later, once the following frames confirm it. On a synthetic voice with a weak, fluctuating fundamental, the frame-by-frame methods flickered an octave up in a third to all of the frames, while pYIN stayed on the right note throughout.
+
+In tests with a synthetic lip trill, McLeod detected almost none of it, YIN about half, and both spectral methods nearly all, while all four stayed within a few cents on steady tone. Recordings loaded onto the pitch graph are still analysed with McLeod.
 
 ### Latency calibration
 
@@ -144,7 +181,7 @@ Calibrate again whenever you change headphones or microphone.
 | `src/score.ts` | Renders the score with [OpenSheetMusicDisplay](https://opensheetmusicdisplay.org/) and reads parts, voices, notes (ties merged), bars and tempo from its model. Also handles the cursor, bar geometry and notehead colouring. |
 | `src/player.ts` | Web Audio scheduler and a simple built-in synth. Handles per-part volume, count-in, metronome and looping. Maps audio time to score position. |
 | `src/pitch.ts` | Microphone input, with browser voice processing turned off. |
-| `src/detectors.ts` | Pitch detection methods: McLeod ([pitchy](https://github.com/ianprime0509/pitchy)), YIN, harmonic spectrum and cepstrum. |
+| `src/detectors.ts` | Pitch detection methods: McLeod ([pitchy](https://github.com/ianprime0509/pitchy)), YIN, pYIN (with online fixed-lag Viterbi decoding), harmonic spectrum and cepstrum. |
 | `src/analysis.ts` | Scores each note (median deviation, share in tune, coverage, onset, vibrato) and computes precision across passes. |
 | `src/roll.ts` | The pitch graph (canvas). |
 | `src/trainer.ts` | Single-note pitch trainer. |
@@ -160,9 +197,17 @@ All positions are measured in quarter-note beats, so the graph does not change w
 
 `npm run sample` regenerates `public/samples/chorale.musicxml` from `scripts/make-sample.mjs`.
 
+## Credits
+
+The piano samples in `public/samples/piano/` are from the [Salamander Grand Piano](https://archive.org/details/SalamanderGrandPianoV3) V3 by Alexander Holm (a Yamaha C5), as converted for [Tone.js](https://github.com/Tonejs/audio), under the [Creative Commons Attribution 3.0](https://creativecommons.org/licenses/by/3.0/) licence.
+
+The choir "aah" samples in `public/samples/choir-aah/` come from the FluidR3_GM soundfont by Frank Wen (instrument 53, "Choir Aahs"), as rendered to MP3 by the [midi-js-soundfonts](https://github.com/gleitz/midi-js-soundfonts) project, under the [Creative Commons Attribution 3.0](https://creativecommons.org/licenses/by/3.0/) licence.
+
+The hand-sign pictures in `public/signs/` are cut from John Curwen's "Manual Signs of Tone in Key", *The Standard Course* (London, 1884), via [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Curwen_Hand_Signs_MT.jpg); public domain.
+
 ## Known limitations
 
 - Repeats and voltas are played straight through, not expanded.
 - Tempo changes take effect at bar boundaries only.
 - Transposing instruments are played at written pitch.
-- Playback uses a simple synthesised tone, not recorded samples.
+- Playback sounds are synthesised, not recorded samples, so they only approximate the real instruments.

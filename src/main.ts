@@ -18,7 +18,6 @@ import {
 } from "./analysis";
 import {
   addRow,
-  clearRows,
   loadRows,
   LOOP_VIEW,
   loopsKey,
@@ -27,6 +26,11 @@ import {
   runsKey,
   TRAINER_KEY,
   TRAINER_VIEW,
+  ECHO_KEY,
+  ECHO_VIEW,
+  SYL_KEY,
+  SYL_VIEW,
+  type EchoSession,
   upsertRow,
   type LoopSession,
   type Run,
@@ -34,12 +38,13 @@ import {
 } from "./history";
 import { midiName, PitchTracker, type MethodReading, type PitchSample } from "./pitch";
 import { DETECTORS, type DetectorId } from "./detectors";
-import { Player } from "./player";
+import { INSTRUMENTS, Player, toInstrument, type Instrument } from "./player";
 import { PitchRoll } from "./roll";
 import { Score, type NoteEvent, type Track } from "./score";
 import { oscillates } from "./vibrato";
 import { PitchTrainer } from "./trainer";
-import { EXERCISES, KEYS, VOICES, generateExercise, type ExerciseId, type VoiceType } from "./exercises";
+import { EXERCISES, KEYS, generateExercise, type ExerciseId } from "./exercises";
+import { EchoTrainer } from "./echo";
 
 type Mode = "lead" | "normal" | "mute";
 
@@ -69,6 +74,9 @@ interface Prefs {
   pitchMethod: DetectorId;
   pitchThresholds: Partial<Record<DetectorId, number>>;
   pitchWindow: number;
+  /** Playback sounds of the practised part and of the other parts. */
+  soundMine: Instrument;
+  soundOthers: Instrument;
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -94,12 +102,17 @@ const DEFAULTS: Prefs = {
   pitchMethod: "mpm",
   pitchThresholds: {},
   pitchWindow: 2048,
+  soundMine: "piano",
+  soundOthers: "piano",
 };
 
 function loadPrefs(): Prefs {
   try {
     // Looping always starts off; it is a per-session choice.
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem("ptchmtch.prefs") || "{}"), loop: false };
+    const p: Prefs = { ...DEFAULTS, ...JSON.parse(localStorage.getItem("ptchmtch.prefs") || "{}"), loop: false };
+    p.soundMine = toInstrument(p.soundMine);
+    p.soundOthers = toInstrument(p.soundOthers);
+    return p;
   } catch {
     return { ...DEFAULTS };
   }
@@ -173,6 +186,7 @@ function latency(): number {
 
 async function loadScore(content: string | Blob, name: string): Promise<void> {
   stop();
+  exerciseLoaded = false;
   try {
     await score.load(content);
   } catch (err) {
@@ -311,6 +325,13 @@ roll.onRangeSelect = (a, b) => setRange(a, b);
 
 // --- gains ----------------------------------------------------------------
 
+const soundOf = (key: string): Instrument => (track && key === track.key ? prefs.soundMine : prefs.soundOthers);
+
+function applySounds(): void {
+  if (!player?.playing) return;
+  for (const t of score.tracks) player.setTrackInstrument(t.key, soundOf(t.key));
+}
+
 function trackGain(key: string): number {
   if (track && key === track.key) return { lead: 1.4, normal: 0.75, mute: 0 }[prefs.mode];
   return (prefs.others / 100) * 0.8;
@@ -364,13 +385,14 @@ async function play(resume = false): Promise<void> {
   roll.follow = true;
   roll.reveal(playhead);
   await p.play({
-    tracks: score.tracks.map((t) => ({ key: t.key, events: t.events, gain: trackGain(t.key) })),
+    tracks: score.tracks.map((t) => ({ key: t.key, events: t.events, gain: trackGain(t.key), instrument: soundOf(t.key) })),
     startBeat: start,
     endBeat: end,
     loop: prefs.loop,
     speed: prefs.speed / 100,
     countIn: prefs.countIn,
     referenceMidi: prefs.reference && first ? first.midi : null,
+    referenceInstrument: prefs.soundMine,
     metronome: prefs.metronome,
     resumeBeat: from ?? undefined,
   });
@@ -449,6 +471,7 @@ function onSample(s: PitchSample): void {
   $("level").style.width = `${Math.min(100, s.level * 400)}%`;
   showLive(s.midi);
   trainer.push(s);
+  echo.push(s);
 
   const p = player;
   if (!p?.playing) return;
@@ -787,30 +810,44 @@ function hideToast(): void {
   $("toast").hidden = true;
 }
 
-type HistoryTab = "runs" | "loops" | "notes";
+type HistoryTab = "runs" | "loops" | "notes" | "echo" | "syllables";
 let historyTab: HistoryTab = "runs";
 
 function openHistory(): void {
   hideToast();
+  // Open on what you're doing: the trainer's mode on the Audiation page, the score's history on
+  // the Score page. (Only when opening; the tabs then switch freely.)
+  if (!$<HTMLDialogElement>("history").open) {
+    if (page === "audiation") historyTab = echo.currentMode === "syllables" ? "syllables" : "echo";
+    else if (historyTab === "echo" || historyTab === "syllables") historyTab = "runs";
+  }
   const dlg = $<HTMLDialogElement>("history");
   for (const b of $("historyTabs").querySelectorAll<HTMLButtonElement>("button"))
     b.classList.toggle("on", b.dataset.tab === historyTab);
   const body = $("historyBody");
   if (historyTab === "notes") {
     $("historyFor").textContent = "All notes practised in the pitch trainer, across pieces.";
-    renderView(body, loadRows<TrainerSession>(TRAINER_KEY), TRAINER_VIEW);
+    renderView<TrainerSession>(body, TRAINER_KEY, TRAINER_VIEW);
+  } else if (historyTab === "echo") {
+    $("historyFor").textContent = "All Echo trainer sessions (first tries of each phrase).";
+    renderView<EchoSession>(body, ECHO_KEY, ECHO_VIEW);
+  } else if (historyTab === "syllables") {
+    $("historyFor").textContent = "All Syllables sessions: solfège read and sung, without hearing it first.";
+    renderView<EchoSession>(body, SYL_KEY, SYL_VIEW);
   } else if (!loaded || !track) {
     $("historyFor").textContent = "Open a score first.";
     body.innerHTML = "";
   } else {
     $("historyFor").textContent = `${track.label} · ${score.title}`;
-    if (historyTab === "runs") renderView(body, loadRows<Run>(runsKey(score.fingerprint, track.key)), RUN_VIEW);
-    else renderView(body, loadRows<LoopSession>(loopsKey(score.fingerprint, track.key)), LOOP_VIEW);
+    if (historyTab === "runs") renderView<Run>(body, runsKey(score.fingerprint, track.key), RUN_VIEW);
+    else renderView<LoopSession>(body, loopsKey(score.fingerprint, track.key), LOOP_VIEW);
   }
   $("historyNote").textContent = {
     runs: "A run is recorded when you sing the whole piece to the end with the microphone on. Each note scores up to 100: half for how close its pitch is, 30% for staying within tolerance, 20% for a clean entry. Vibrato is measured on notes held for at least 0.6 s; the shaded band is the typical healthy range.",
     loops: "A loop session is recorded when you stop after at least three passes of a looped selection. Accuracy is how far the notes were off on average in your best pass (passes with fewer than 80% of the notes sung don't count). Spread shows how differently each note came out from pass to pass (precision).",
     notes: "A session is recorded for each note you practise in the trainer for at least 2 seconds of singing. Vibrato is measured on the longest uninterrupted stretch.",
+    syllables: "A session is recorded as for Echo, in the Syllables mode. Levels follow the Kodály order of tone sets (sol mi, then la, do, re, low la and sol, fa, ti), so they aren't the same as Echo's.",
+    echo: "A session is recorded when you stop the Echo trainer, close it, change key or voice, or leave the page, if you sang at least one round. Only the first try of each phrase counts. Right: every note within 50 cents; in tune: every note within your tolerance.",
   }[historyTab];
   if (!dlg.open) dlg.showModal();
 }
@@ -838,6 +875,17 @@ function stepTrainer(dir: 1 | -1): void {
   trainer.setTarget({ midi: next.midi, context: trainerContext(next) });
 }
 
+const echo = new EchoTrainer($("echo"), {
+  ctxTime: () => getPlayer().ctx.currentTime,
+  play: (notes, sound) => getPlayer().playNotes(notes, sound),
+  ensureMic: async () => !!(await ensureMic()),
+  settings,
+});
+
+echo.onSession = (s, mode) => addRow(mode === "syllables" ? SYL_KEY : ECHO_KEY, s);
+// A session still running when the page goes away is kept too.
+window.addEventListener("pagehide", () => echo.endSession());
+
 trainer.onPrev = () => stepTrainer(-1);
 trainer.onNext = () => stepTrainer(1);
 trainer.onSession = (s) => addRow(TRAINER_KEY, s);
@@ -845,7 +893,7 @@ trainer.onTone = (on) => {
   stopTone?.();
   stopTone = null;
   const midi = trainer.midi;
-  if (on && midi !== null) stopTone = getPlayer().sustain(midi);
+  if (on && midi !== null) stopTone = getPlayer().sustain(midi, prefs.soundMine);
 };
 
 scorePane.addEventListener("dblclick", (e) => {
@@ -1232,12 +1280,23 @@ function practise(from: number, to: number): void {
 // --- practice scores ------------------------------------------------------
 
 const EX_KEY = "ptchmtch.exercise";
+/** A generated exercise is loaded: changing Your part is remembered for the next one. */
+let exerciseLoaded = false;
+
+function rememberExercisePart(): void {
+  if (!exerciseLoaded || !track) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(EX_KEY) || "{}");
+    localStorage.setItem(EX_KEY, JSON.stringify({ ...saved, part: track.label }));
+  } catch {
+    /* not remembered */
+  }
+}
 
 function bindPracticeMenu(): void {
   const btn = $("practiceBtn");
   const panel = $("practicePanel");
   const exSel = $<HTMLSelectElement>("exExercise");
-  const voiceSel = $<HTMLSelectElement>("exVoice");
   const keySel = $<HTMLSelectElement>("exKey");
 
   const group = (label: string, items: [string, string][]) => {
@@ -1249,20 +1308,20 @@ function bindPracticeMenu(): void {
   const ex = (ids: string[]) => EXERCISES.filter((e) => ids.includes(e.id)).map((e) => [e.id, e.label] as [string, string]);
   group("Scales", ex(["major-scale", "natural-minor-scale", "harmonic-minor-scale", "chromatic-scale"]));
   group("Warm-ups", ex(["five-note-major", "five-note-minor", "arpeggio-major", "arpeggio-minor"]));
+  group("Triplets", ex(["triplets-five-note", "triplets-stepping", "triplets-arpeggio", "triplets-octave", "triplets-octave-half"]));
   group("Pieces", [["chorale", "Practice chorale (SATB)"]]);
-  for (const v of VOICES) voiceSel.append(new Option(v.label, v.id));
   KEYS.forEach((k, pc) => keySel.append(new Option(k, String(pc))));
 
   try {
     const saved = JSON.parse(localStorage.getItem(EX_KEY) || "{}");
     if (saved.exercise) exSel.value = saved.exercise;
-    if (saved.voice) voiceSel.value = saved.voice;
     if (saved.key != null) keySel.value = String(saved.key);
   } catch {
     /* defaults */
   }
   const sync = () => {
     for (const el of panel.querySelectorAll<HTMLElement>(".ex-param")) el.hidden = exSel.value === "chorale";
+    for (const el of panel.querySelectorAll<HTMLElement>(".ex-satb")) el.hidden = exSel.value === "chorale";
   };
   exSel.addEventListener("change", sync);
   sync();
@@ -1286,7 +1345,8 @@ function bindPracticeMenu(): void {
   $("exLoad").addEventListener("click", async () => {
     show(false);
     try {
-      localStorage.setItem(EX_KEY, JSON.stringify({ exercise: exSel.value, voice: voiceSel.value, key: +keySel.value }));
+      const saved = JSON.parse(localStorage.getItem(EX_KEY) || "{}");
+      localStorage.setItem(EX_KEY, JSON.stringify({ ...saved, exercise: exSel.value, key: +keySel.value }));
     } catch {
       /* not remembered */
     }
@@ -1295,8 +1355,17 @@ function bindPracticeMenu(): void {
       await loadScore(await res.text(), "sample");
       return;
     }
-    const g = generateExercise(exSel.value as ExerciseId, voiceSel.value as VoiceType, +keySel.value);
+    const g = generateExercise(exSel.value as ExerciseId, +keySel.value);
     await loadScore(g.xml, g.title);
+    // Open on the part chosen last time for an exercise.
+    try {
+      const part = JSON.parse(localStorage.getItem(EX_KEY) || "{}").part;
+      const t = score.tracks.find((t) => t.label === part);
+      if (t && t !== track) selectTrack(t.key);
+    } catch {
+      /* first part */
+    }
+    exerciseLoaded = true;
   });
 }
 
@@ -1328,6 +1397,7 @@ function bindControls(): void {
   $<HTMLSelectElement>("voice").addEventListener("change", (e) => {
     stop();
     selectTrack((e.target as HTMLSelectElement).value);
+    rememberExercisePart();
     updateSummary();
   });
 
@@ -1398,22 +1468,22 @@ function bindControls(): void {
       historyTab = b.dataset.tab as HistoryTab;
       openHistory();
     });
-  $("historyClear").addEventListener("click", () => {
-    if (historyTab === "notes") {
-      if (confirm("Delete the history of all notes practised in the trainer?")) clearRows(TRAINER_KEY);
-    } else if (track) {
-      const what = historyTab === "runs" ? "recorded runs" : "loop sessions";
-      if (!confirm(`Delete all ${what} of ${track.label} in ${score.title}?`)) return;
-      clearRows((historyTab === "runs" ? runsKey : loopsKey)(score.fingerprint, track.key));
-    }
-    openHistory();
-  });
 
   $("zoomIn").addEventListener("click", () => roll.zoom(1.25));
   $("zoomOut").addEventListener("click", () => roll.zoom(0.8));
 
   // Settings dialog
   bindDetection();
+  for (const [id, key] of [["soundMine", "soundMine"], ["soundOthers", "soundOthers"]] as const) {
+    const sel = $<HTMLSelectElement>(id);
+    for (const ins of INSTRUMENTS) sel.append(new Option(ins.label, ins.id));
+    sel.value = prefs[key];
+    sel.addEventListener("change", () => {
+      prefs[key] = sel.value as Instrument;
+      savePrefs();
+      applySounds();
+    });
+  }
   const dlg = $<HTMLDialogElement>("settings");
   $("settingsBtn").addEventListener("click", () => {
     showLatency();
@@ -1476,6 +1546,11 @@ function bindControls(): void {
   document.addEventListener("keydown", (e) => {
     const t = e.target as HTMLElement;
     if (t.closest("input, select, textarea, dialog")) return;
+    if (e.key === "m" || e.key === "M") {
+      void toggleMic();
+      return;
+    }
+    if (page !== "score") return; // the other pages have their own keys
     if (e.code === "Space") {
       e.preventDefault();
       if (player?.playing) stop();
@@ -1487,8 +1562,6 @@ function bindControls(): void {
       const box = $<HTMLInputElement>("loop");
       box.checked = !box.checked;
       box.dispatchEvent(new Event("change"));
-    } else if (e.key === "m" || e.key === "M") {
-      void toggleMic();
     } else if (e.key === "g" || e.key === "G") {
       const box = $<HTMLInputElement>("hideGraph");
       box.checked = !box.checked;
@@ -1501,7 +1574,8 @@ function bindControls(): void {
   let resizeTimer = 0;
   let paneWidth = scorePane.clientWidth;
   new ResizeObserver(() => {
-    if (scorePane.clientWidth === paneWidth) return;
+    // Hidden (another page is shown): keep the layout for when it comes back.
+    if (!scorePane.clientWidth || scorePane.clientWidth === paneWidth) return;
     paneWidth = scorePane.clientWidth;
     clearTimeout(resizeTimer);
     resizeTimer = window.setTimeout(rerenderScore, 250);
@@ -1590,8 +1664,39 @@ async function listDevices(): Promise<void> {
   sel.value = prefs.deviceId;
 }
 
+// --- pages ----------------------------------------------------------------
+
+type Page = "score" | "audiation";
+const PAGE_KEY = "ptchmtch.page";
+let page: Page = "score";
+
+function showPage(p: Page): void {
+  if (p === "audiation") stop();
+  page = p;
+  $("pageScore").hidden = p !== "score";
+  if (p === "audiation") echo.open();
+  else echo.close();
+  for (const b of $("nav").querySelectorAll<HTMLButtonElement>("[data-page]")) {
+    b.classList.toggle("on", b.dataset.page === p);
+    b.setAttribute("aria-current", b.dataset.page === p ? "page" : "false");
+  }
+  try {
+    localStorage.setItem(PAGE_KEY, p);
+  } catch {
+    /* not remembered */
+  }
+}
+
+for (const b of $("nav").querySelectorAll<HTMLButtonElement>("[data-page]"))
+  b.addEventListener("click", () => showPage(b.dataset.page as Page));
+try {
+  showPage(localStorage.getItem(PAGE_KEY) === "audiation" ? "audiation" : "score");
+} catch {
+  showPage("score");
+}
+
 bindControls();
 refresh();
 updateSummary();
 
-if (import.meta.env.DEV) Object.assign(window, { __app: { score, roll, calibration, get player() { return player; } } });
+if (import.meta.env.DEV) Object.assign(window, { __app: { score, roll, calibration, echo, get player() { return player; } } });

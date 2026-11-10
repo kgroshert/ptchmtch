@@ -61,16 +61,88 @@ body {
 body {
   display: grid;
   grid-template-rows: auto 1fr;
+  /* Never wider than the window, however wide a toolbar's content. */
+  grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
 }
 
-/* ---- header ---- */
+/* ---- menu bar and pages ---- */
+
+.menubar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.nav {
+  display: flex;
+  gap: 2px;
+}
+
+.nav button {
+  font: inherit;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.nav button:hover {
+  color: var(--fg);
+  background: var(--accent-soft);
+}
+
+.nav button.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.page {
+  min-height: 0;
+}
+
+.page[hidden] {
+  display: none !important;
+}
+
+.page-score {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 560px) {
+  .menubar {
+    gap: 6px;
+    padding: 6px 8px;
+  }
+  .menubar .brand {
+    display: none;
+  }
+  .nav button {
+    padding: 6px 7px;
+  }
+  .mic-label,
+  .menubar .meter {
+    display: none;
+  }
+}
+
+/* ---- score toolbar ---- */
 
 .bar {
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   padding: 8px 14px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -255,7 +327,8 @@ input[type="checkbox"] {
 
 .checks {
   display: flex;
-  gap: 14px;
+  flex-wrap: wrap;
+  gap: 6px 14px;
   padding-bottom: 6px;
 }
 
@@ -469,8 +542,9 @@ body.graph-hidden .splitter {
 
 .roll-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 6px 14px;
   padding-bottom: 6px;
 }
 
@@ -704,6 +778,254 @@ dialog small,
   display: none;
 }
 
+/* ---- echo trainer ---- */
+
+.page.echo {
+  overflow: auto;
+  padding: 16px;
+}
+
+.echo-inner {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.echo-inner h2 {
+  margin: 0;
+}
+
+.echo-settings select {
+  max-width: 100%;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.echo-settings label {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.echo-settings label[hidden] {
+  display: none;
+}
+
+.echo-main {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.echo-map {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 4px;
+  width: 64px;
+  flex: none;
+}
+
+#ecMap {
+  width: 100%;
+  height: 100%;
+  min-height: 260px;
+}
+
+.echo-map .btn {
+  padding: 2px 4px;
+  font-size: 11px;
+}
+
+.echo-stage {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 12px;
+  min-height: max(320px, calc(100vh - 340px));
+  padding: 18px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  text-align: center;
+  outline: none;
+}
+
+.echo-phase {
+  font-size: 34px;
+  font-weight: 650;
+  min-height: 1.3em;
+}
+
+.echo[data-phase="sing"] .echo-phase {
+  color: var(--accent);
+}
+
+.echo-hint {
+  max-width: 460px;
+}
+
+.echo-dots {
+  display: flex;
+  gap: 10px;
+  min-height: 14px;
+}
+
+.echo-dots span {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  border: 2px solid var(--accent);
+}
+
+/* Syllables to read: hand signs raised by pitch, as Curwen's hand rises with the tones. */
+.echo-syl {
+  --rise: 190px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: calc(var(--rise) + 110px);
+}
+
+.echo-syl .syl {
+  /* Shrink to fit long phrases on narrow screens. */
+  flex: 0 1 78px;
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  margin-bottom: calc(var(--h) * var(--rise));
+}
+
+.echo-syl .sign {
+  width: 100%;
+  aspect-ratio: 78 / 62;
+  background-color: var(--fg);
+  -webkit-mask: var(--img) center / contain no-repeat;
+  mask: var(--img) center / contain no-repeat;
+}
+
+.echo-syl b {
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.1;
+}
+
+.echo-syl small {
+  min-height: 1.2em;
+  color: var(--muted);
+}
+
+@media (max-width: 560px) {
+  .echo-syl {
+    --rise: 110px;
+    gap: 4px;
+  }
+  .echo-syl b {
+    font-size: 17px;
+  }
+  .echo-syl small {
+    font-size: 11px;
+  }
+}
+
+.echo-meter {
+  width: 220px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.echo-meter > div {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.08s;
+}
+
+.echo-rate,
+.echo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.echo-result {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.echo-result h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.echo-agree {
+  margin: 0;
+  color: var(--muted);
+}
+
+.echo-agree.good {
+  color: #1f9d55;
+}
+
+.echo-notes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.echo-notes li {
+  display: grid;
+  gap: 2px;
+  min-width: 70px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  border: 2px solid var(--c);
+  font-variant-numeric: tabular-nums;
+}
+
+.echo-notes li b {
+  font-size: 16px;
+}
+
+.echo-notes li span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.echo-notes li .echo-steady {
+  font-size: 11px;
+}
+
+.echo-notes li .echo-steady.wobbly {
+  color: #d08700;
+  font-weight: 600;
+}
+
+.echo-notes li .echo-sung {
+  color: var(--c);
+  font-weight: 600;
+}
+
+#ecCanvas {
+  width: 100%;
+  height: 200px;
+}
+
+.echo-stage [hidden],
+.echo-stage[hidden] {
+  display: none;
+}
+
 /* ---- pitch trainer ---- */
 
 dialog.trainer {
@@ -907,6 +1229,22 @@ dialog.history h2 {
   font-weight: 650;
 }
 
+.history-table .row-delete {
+  display: inline-grid;
+  place-items: center;
+  padding: 3px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.history-table .row-delete:hover {
+  color: #d13b3b;
+  background: rgba(209, 59, 59, 0.1);
+}
+
 .history-table small {
   color: var(--muted);
 }
@@ -1037,7 +1375,8 @@ dialog.calibration .actions {
   font-size: 12px;
 }
 
-.practice-panel .ex-param[hidden] {
+.practice-panel .ex-param[hidden],
+.practice-panel .ex-echo[hidden] {
   display: none;
 }
 
@@ -1121,5 +1460,19 @@ dialog.detect {
 
 .detect-desc {
   margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.sound-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  color: var(--fg);
+}
+
+.sound-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
 }
