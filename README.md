@@ -56,9 +56,17 @@ The level adapts: 3 right rounds in a row move you up, 2 wrong ones down (or pic
 
 **Syllables**, switched at the top right of the Audiation page, trains movable-do solfège the other way round from Echo: you see the syllables and sing them without hearing them first. The key plays once at the start; then for each phrase:
 
-1. *Before each phrase*: the home note plays (do in major, la in minor), or the whole key, or nothing.
+**Help** sets how much the app helps, so you can move through the usual steps of learning solfège:
+
+- **Learn: hear it first** (the default): the phrase plays while each card lights up in turn, then you sing it back. This ties the sound to the syllable, the first step in Kodály and Gordon teaching.
+- **Hint: on request**: you read the phrase and sing when ready (Enter or **Sing now**; nothing starts by itself). If lost, **Hint** (H) plays the first note, and pressed again the whole phrase. A phrase heard whole as a hint doesn't count towards the level.
+- **Test: read cold**: nothing plays until afterwards.
+
+After 6 of the last 8 phrases right, the result suggests moving to less help, with a button to switch. Each kind of help is its own session in History (shown with the key and voice).
+
+1. *Before each phrase*: the home note plays (do in major, la in minor), shown as its own faded card marked "home", set apart from the phrase and lit while it sounds, followed by a short pause; or the whole key; or nothing.
 2. **Read it**: the syllables appear with Curwen's hand signs, each raised by its pitch as the hand rises with the tones (low and high octaves are marked). Hear them in your head.
-3. **Sing it**, after a moment, or at once with Enter. The syllables stay up while you sing. Judging, repeats, wobble and slide work as in Echo, and afterwards the phrase plays so you hear how it should have sounded.
+3. **Sing it**: after the phrase in Learn, when you're ready in Hint, after a moment in Test (or at once with Enter). The syllables stay up while you sing. Judging, repeats, wobble and slide work as in Echo, and afterwards the phrase plays so you hear how it should have sounded.
 
 Its levels follow the Kodály order of tone sets: sol mi; sol mi la; do mi sol la; the pentatonic do re mi sol la; with low la and low sol; up to high do with leaps; adding fa; adding ti (the whole scale); the whole scale with leaps. From the third level on, phrases often end on the home tone. Syllables has its own level (with the same new-day warm-up) and its own History tab; the note map is shared.
 

@@ -906,6 +906,31 @@ dialog small,
   mask: var(--img) center / contain no-repeat;
 }
 
+.echo-syl .syl {
+  transition: color 0.1s, transform 0.1s;
+}
+
+/* The home note heard before the phrase: apart from it, and quieter. */
+.echo-syl .syl.ref {
+  opacity: 0.5;
+  margin-right: 18px;
+  padding-right: 18px;
+  border-right: 1px dashed var(--line);
+}
+
+.echo-syl .syl.ref.on {
+  opacity: 1;
+}
+
+.echo-syl .syl.on {
+  color: var(--accent);
+  transform: scale(1.12);
+}
+
+.echo-syl .syl.on .sign {
+  background-color: var(--accent);
+}
+
 .echo-syl b {
   font-size: 24px;
   font-weight: 650;
@@ -927,6 +952,10 @@ dialog small,
   }
   .echo-syl small {
     font-size: 11px;
+  }
+  .echo-syl .syl.ref {
+    margin-right: 4px;
+    padding-right: 6px;
   }
 }
 

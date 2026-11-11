@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:lan": "LAN=1 vite --port 5443",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "sample": "node scripts/make-sample.mjs"
@@ -15,6 +16,7 @@
     "pitchy": "^4.1.0"
   },
   "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5"
   }

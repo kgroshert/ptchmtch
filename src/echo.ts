@@ -374,6 +374,12 @@ type Phase = "idle" | "key" | "listen" | "hold" | "read" | "sing" | "rate" | "re
 /** Echo: hear a phrase and sing it back. Syllables: read solfège syllables and sing them, unheard. */
 export type TrainMode = "echo" | "syllables";
 
+export type Help = "learn" | "hint" | "test";
+const HELP_LABEL: Record<Help, string> = { learn: "Learn", hint: "Hint", test: "Test" };
+/** First tries in a row, of these, that suggest moving to less help. */
+const SUGGEST_OF = 8;
+const SUGGEST_RIGHT = 6;
+
 /** Where each mode is on its own staircase. */
 interface LevelState {
   /** Fixed level, or null to adapt. */
@@ -396,6 +402,11 @@ interface EchoPrefs extends LevelState {
   mode?: TrainMode;
   /** What plays before each syllable phrase: the home tone, the whole cadence, or nothing. */
   ref?: "home" | "key" | "none";
+  /**
+   * How much the Syllables mode helps: Learn plays the phrase first while the cards light up;
+   * Hint plays the first note, then the whole phrase, on request; Test plays nothing.
+   */
+  help?: Help;
   /** The Syllables mode's level (Echo's is on the prefs themselves). */
   syl?: LevelState;
   sound: Instrument;
@@ -473,6 +484,12 @@ export class EchoTrainer {
   private selfImpression: Impression | null = null;
   private streak = 0; // > 0: right rounds in a row, < 0: wrong ones
   private stats = newStats();
+  /** Hints used on this phrase (Hint mode): 1 = the first note, 2 = the whole phrase. */
+  private hints = 0;
+  /** The phrase was played before it was sung (Learn, or a whole-phrase hint in Hint or Test). */
+  private heard = false;
+  /** Recent first tries (right or not) with the current help, for suggesting less help. */
+  private recent: boolean[] = [];
   /** Called when a session with at least one round ends (Stop, closing, a new key or voice, leaving the page). */
   onSession: (s: EchoSession, mode: TrainMode) => void = () => {};
   private $ = <T extends HTMLElement = HTMLElement>(id: string) => this.dlg.querySelector<T>(`#${id}`)!;
@@ -511,6 +528,8 @@ export class EchoTrainer {
       this.$<HTMLSelectElement>("ecTonality").value = this.minor ? "minor" : "major";
       this.$<HTMLSelectElement>("ecRef").value = this.prefs.ref ?? "home";
       this.$("ecRefWrap").hidden = this.mode !== "syllables";
+      this.$("ecHelpWrap").hidden = this.mode !== "syllables";
+      this.$<HTMLSelectElement>("ecHelp").value = this.help;
       for (const b of this.dlg.querySelectorAll<HTMLButtonElement>("#ecMode button")) b.classList.toggle("on", b.dataset.mode === this.mode);
       this.$("ecTitle").textContent = this.mode === "syllables" ? "Sing the syllables" : "Echo";
       if (this.phase === "idle")
@@ -530,6 +549,11 @@ export class EchoTrainer {
       this.lv.fixedLevel = levelSel.value === "auto" ? null : +levelSel.value;
       this.prefs.minor = this.$<HTMLSelectElement>("ecTonality").value === "minor";
       this.prefs.ref = this.$<HTMLSelectElement>("ecRef").value as EchoPrefs["ref"];
+      const help = this.$<HTMLSelectElement>("ecHelp").value as Help;
+      if (help !== this.help) {
+        this.prefs.help = help;
+        this.recent = [];
+      }
       // Level names in Echo name the range, which minor moves.
       fillLevels();
       levelSel.value = this.lv.fixedLevel === null ? "auto" : String(this.lv.fixedLevel);
@@ -555,6 +579,21 @@ export class EchoTrainer {
     keySel.addEventListener("change", onChange(true));
     voiceSel.addEventListener("change", onChange(true));
     this.$("ecTonality").addEventListener("change", onChange(true));
+    // A new kind of help is a new session (History shows the help used).
+    this.$("ecHelp").addEventListener("change", onChange(true));
+    this.$("ecHintBtn").addEventListener("click", () => this.giveHint());
+    this.$("ecReady").addEventListener("click", () => {
+      if (this.phase !== "read") return;
+      this.clearTimers();
+      this.beginAnswer();
+    });
+    this.$("ecResultBody").addEventListener("click", (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-help]");
+      if (!b) return;
+      const sel = this.$<HTMLSelectElement>("ecHelp");
+      sel.value = b.dataset.help!;
+      sel.dispatchEvent(new Event("change"));
+    });
     for (const id of ["ecLevel", "ecSound", "ecSelf", "ecAuto", "ecRepeats", "ecWobble", "ecSlide", "ecRef"]) this.$(id).addEventListener("change", onChange(false));
     // Switching mode ends the session (each mode has its own history and level).
     for (const b of this.dlg.querySelectorAll<HTMLButtonElement>("#ecMode button"))
@@ -604,6 +643,8 @@ export class EchoTrainer {
           this.beginAnswer();
         } else if (this.phase === "sing") this.finishAnswer();
         else if (this.phase === "result") this.next();
+      } else if (e.key === "h" || e.key === "H") {
+        this.giveHint();
       } else if (e.code === "Space" && this.phase === "result") {
         e.preventDefault();
         this.practiceAgain();
@@ -656,6 +697,10 @@ export class EchoTrainer {
 
   get currentMode(): TrainMode {
     return this.mode;
+  }
+
+  private get help(): Help {
+    return this.prefs.help ?? "learn";
   }
 
   private get minor(): boolean {
@@ -757,7 +802,8 @@ export class EchoTrainer {
     this.showLevel();
     this.tonic = this.doMidi();
     this.$("ecStart").textContent = "Stop";
-    this.$("ecContext").textContent = `${this.keyName()} · ${VOICES.find((v) => v.id === this.prefs.voice)!.label}`;
+    this.$("ecContext").textContent =
+      `${this.keyName()} · ${VOICES.find((v) => v.id === this.prefs.voice)!.label}` + (this.mode === "syllables" ? ` · ${HELP_LABEL[this.help]}` : "");
     // The key once, then a silence, then the first round.
     const end = this.playKey();
     this.later(end + 1.2, () => this.round());
@@ -817,26 +863,81 @@ export class EchoTrainer {
    * to hear them inwardly, or at once with Enter.
    */
   private readRound(): void {
+    this.hints = 0;
+    this.heard = this.help === "learn";
     this.setPhase("read");
+    this.showHintButton();
     let t = 0;
+    const home = this.minor ? 5 : 0;
     if (this.prefs.ref === "key") t = this.playKey() + 0.4;
     else if (this.prefs.ref !== "none") {
       this.stopSound?.();
-      const home = this.minor ? 5 : 0;
       const p = this.host.play([{ midi: this.tonic + degreeSemis(home), start: 0, dur: 1.2 }], this.prefs.sound);
       this.stopSound = p.stop;
-      this.$("ecHint").textContent = `This is ${degreeSyl(home)}. Hear the syllables in your head, then sing them (Enter to start now).`;
-      t = p.end - this.host.ctxTime() + 0.2;
+      this.light(-1, 0.08, 1.2);
+      // A clear pause, so the home note isn't heard as the phrase's first note.
+      t = p.end - this.host.ctxTime() + 0.8;
     }
-    this.later(t + 1.5 + 0.4 * this.targets.length, () => {
-      if (this.phase === "read") this.beginAnswer();
-    });
+    const ref = this.prefs.ref === "none" ? "" : this.prefs.ref === "key" ? "After the key: " : `This is ${degreeSyl(home)}. `;
+    const hint = this.$("ecHint");
+    if (this.help === "learn") {
+      // Hear it with the syllables lighting up, then sing it back.
+      hint.textContent = `${ref}Listen and follow the syllables, then sing them back.`;
+      this.later(t, () => {
+        const len = this.playPhrase(true);
+        this.later(len + 1, () => {
+          if (this.phase === "read") this.beginAnswer();
+        });
+      });
+    } else if (this.help === "hint") {
+      // No hurry: sing when ready (Enter); a hint if lost (H).
+      hint.textContent = `${ref}Hear the syllables in your head. Lost? Hint (H) plays the first note, then the whole phrase. Sing when ready (Enter).`;
+    } else {
+      hint.textContent = `${ref}Hear the syllables in your head, then sing them (Enter to start now).`;
+      this.later(t + 1.5 + 0.4 * this.targets.length, () => {
+        if (this.phase === "read") this.beginAnswer();
+      });
+    }
+  }
+
+  /** Hint mode: the first note, then (pressed again) the whole phrase, which then doesn't count. */
+  private giveHint(): void {
+    if (this.phase !== "read" || this.mode !== "syllables" || this.help !== "hint" || this.hints >= 2) return;
+    this.hints++;
+    if (this.hints === 1) {
+      this.stopSound?.();
+      const p = this.host.play([{ midi: this.targets[0], start: 0, dur: 1.2 }], this.prefs.sound);
+      this.stopSound = p.stop;
+      this.light(0, 0.08, 1.2);
+    } else {
+      this.heard = true;
+      this.playPhrase(true);
+    }
+    this.showHintButton();
+  }
+
+  private showHintButton(): void {
+    const b = this.$<HTMLButtonElement>("ecHintBtn");
+    b.hidden = !(this.mode === "syllables" && this.help === "hint" && this.phase === "read");
+    b.disabled = this.hints >= 2;
+    b.textContent = this.hints === 0 ? "Hint: first note" : this.hints === 1 ? "Hint: whole phrase" : "Hint used";
+    this.$("ecReady").hidden = !(this.mode === "syllables" && this.phase === "read");
+  }
+
+  /** Lights card `i` from `at` for `dur` seconds (relative to now). */
+  /** Lights phrase card `i` (or the home-note card, for -1) from `at` for `dur` seconds (relative to now). */
+  private light(i: number, at: number, dur: number): void {
+    const card = () => (i < 0 ? this.$("ecSyl").querySelector(".syl.ref") : this.$("ecSyl").querySelectorAll(".syl:not(.ref)")[i]);
+    this.later(at, () => card()?.classList.add("on"));
+    this.later(at + dur, () => card()?.classList.remove("on"));
   }
 
   /** Plays the current phrase; returns its length in seconds. */
-  private playPhrase(): number {
+  private playPhrase(highlight = false): number {
     this.stopSound?.();
     const n = this.targets.length;
+    // playNotes starts 80 ms from now.
+    if (highlight) this.targets.forEach((_, i) => this.light(i, 0.08 + i * NOTE_SEC, n === 1 ? 1.5 : i === n - 1 ? LAST_SEC : NOTE_SEC - 0.05));
     const notes = this.targets.map((midi, i) => ({
       midi,
       start: i * NOTE_SEC,
@@ -880,7 +981,13 @@ export class EchoTrainer {
     const inTune = this.result.every((n) => n.status === "good");
     // Only the first try of a phrase counts towards the level, the session and the note map: a
     // repeat has been heard more often, so it says less about hearing from memory.
-    if (this.attempt === 0) {
+    // In Hint and Test, a phrase played as a hint has been heard: it doesn't count either.
+    const counts = this.attempt === 0 && (this.mode !== "syllables" || this.help === "learn" || !this.heard);
+    if (counts && this.mode === "syllables") {
+      this.recent.push(right);
+      if (this.recent.length > SUGGEST_OF) this.recent.shift();
+    }
+    if (counts) {
       if (!this.stats.rounds) {
         this.stats.started = Date.now();
         this.stats.startLevel = this.level;
@@ -1008,7 +1115,7 @@ export class EchoTrainer {
       key: "The key",
       listen: "Listen",
       hold: "Hold it in your mind…",
-      read: "Read it",
+      read: this.help === "learn" ? "Listen and read" : "Read it",
       sing: this.mode === "syllables" ? "Sing it" : "Sing it back",
       rate: "How was it?",
       result: "",
@@ -1041,6 +1148,7 @@ export class EchoTrainer {
     cards.hidden = !syl || !["read", "sing"].includes(p);
     if (!cards.hidden && p === "read") cards.innerHTML = this.cardsHtml();
     if (p !== "sing") this.$("ecMeter").style.width = "0";
+    this.showHintButton();
   }
 
   private showLevel(): void {
@@ -1130,7 +1238,15 @@ export class EchoTrainer {
       this.attempt === 0
         ? ""
         : `<p class="echo-agree">Try ${this.attempt + 1}${this.attempt <= this.prefs.repeats ? ` of ${this.prefs.repeats + 1}` : " (extra practice)"}</p>`;
-    this.$("ecResultBody").innerHTML = `<h3>${head}</h3>${tries}${rated}<ol class="echo-notes">${rows}</ol>`;
+    let help = "";
+    if (this.mode === "syllables") {
+      if (this.help !== "learn" && this.heard && this.attempt === 0) help = `<p class="echo-agree">You heard the whole phrase as a hint, so this one doesn't count towards the level.</p>`;
+      const next: Help | null = this.help === "learn" ? "hint" : this.help === "hint" ? "test" : null;
+      const ok = this.recent.filter(Boolean).length;
+      if (next && this.recent.length >= SUGGEST_OF && ok >= SUGGEST_RIGHT)
+        help += `<p class="echo-agree good">${ok} of the last ${this.recent.length} right with ${HELP_LABEL[this.help]}. Ready for less help? <button class="btn ghost small" data-help="${next}">Switch to ${HELP_LABEL[next]}</button></p>`;
+    }
+    this.$("ecResultBody").innerHTML = `<h3>${head}</h3>${tries}${rated}${help}<ol class="echo-notes">${rows}</ol>`;
     this.paintAnswer();
   }
 
@@ -1140,13 +1256,13 @@ export class EchoTrainer {
    */
   private cardsHtml(): string {
     const [lo, hi] = this.degRange;
-    return this.degs
-      .map((d) => {
-        const oct = d < 0 ? "low" : d >= 7 ? "high" : "";
-        const h = (d - lo) / (hi - lo);
-        return `<div class="syl" style="--h:${h.toFixed(3)}"><i class="sign" style="--img:url('${signUrl(d)}')"></i><b>${degreeSyl(d)}</b><small>${oct}</small></div>`;
-      })
-      .join("");
+    const card = (d: number, cls: string, note: string) =>
+      `<div class="syl${cls}" style="--h:${((d - lo) / (hi - lo)).toFixed(3)}"><i class="sign" style="--img:url('${signUrl(d)}')"></i><b>${degreeSyl(d)}</b><small>${note}</small></div>`;
+    const oct = (d: number) => (d < 0 ? "low" : d >= 7 ? "high" : "");
+    // The home note heard before the phrase gets its own card, set apart, so it isn't read as
+    // part of the phrase.
+    const home = this.prefs.ref === "home" || this.prefs.ref === undefined ? card(this.minor ? 5 : 0, " ref", "home") : "";
+    return home + this.degs.map((d) => card(d, "", oct(d))).join("");
   }
 
   /** Pitches shown on the note map: the current voice's range of phrase notes, with a margin. */

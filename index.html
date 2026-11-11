@@ -184,6 +184,14 @@
         </label>
         <label>Voice <select id="ecVoice"></select></label>
         <label>Level <select id="ecLevel"></select></label>
+        <label id="ecHelpWrap" title="Learn: hear the phrase first while the syllables light up, then sing it back. Hint: read it, and if lost, hear the first note or the whole phrase. Test: read it cold.">
+          Help
+          <select id="ecHelp">
+            <option value="learn">Learn: hear it first</option>
+            <option value="hint">Hint: on request</option>
+            <option value="test">Test: read cold</option>
+          </select>
+        </label>
         <label id="ecRefWrap" title="What you hear before each phrase of syllables">
           Before each phrase
           <select id="ecRef">
@@ -236,6 +244,10 @@
         <div id="ecSyl" class="echo-syl" hidden></div>
         <div id="ecHint" class="muted echo-hint"></div>
         <div id="ecMeterWrap" class="echo-meter"><div id="ecMeter"></div></div>
+        <div class="echo-actions">
+          <button id="ecHintBtn" class="btn ghost" title="Play the first note, then the whole phrase (H)" hidden>Hint: first note</button>
+          <button id="ecReady" class="btn" title="Start singing (Enter)" hidden>Sing now</button>
+        </div>
         <button id="ecDone" class="btn">Done</button>
         <div id="ecRate" class="echo-rate">
           <button class="btn" data-rate="flat">Flat</button>
