@@ -650,6 +650,9 @@ body.graph-hidden .splitter {
 }
 
 .roll-wrap {
+  /* Always the last, stretching row, also while the recording bar above is hidden (a hidden
+     bar takes no row, which would otherwise move the graph into a row sized to its content). */
+  grid-row: 3;
   position: relative;
   min-height: 0;
   border: 1px solid var(--line);

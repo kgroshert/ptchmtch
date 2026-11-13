@@ -175,6 +175,8 @@ export class PitchRoll {
   private resize(): void {
     const dpr = window.devicePixelRatio || 1;
     const r = this.canvas.getBoundingClientRect();
+    // Hidden (another page is shown): keep the last size; this runs again when it's shown.
+    if (!r.width || !r.height) return;
     this.w = r.width;
     this.h = r.height;
     this.canvas.width = Math.round(r.width * dpr);
