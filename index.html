@@ -12,6 +12,7 @@
       <div class="nav" id="nav">
         <button data-page="score" title="Sing from a score">Score</button>
         <button data-page="audiation" title="Hear a phrase, then sing it back">Audiation</button>
+        <button data-page="support" title="Breath support: messa di voce">Support</button>
         <button id="historyBtn" title="Your progress over time">History</button>
         <button id="settingsBtn" title="Settings">Settings</button>
       </div>
@@ -158,6 +159,49 @@
       <div id="toast" class="toast" hidden></div>
     </main>
     </div>
+
+    <section id="support" class="page echo support" hidden>
+      <div class="echo-inner">
+        <div class="trainer-head">
+          <div>
+            <h2>Messa di voce</h2>
+            <span class="muted">One note: soft, swell to loud, fade back to soft, evenly and on pitch</span>
+          </div>
+          <span class="spacer"></span>
+          <button id="mvHear" class="btn ghost" title="Play the note">Hear note</button>
+          <button id="mvStart" class="btn primary" title="Start or stop (Enter)">Start</button>
+        </div>
+        <div class="trainer-detect echo-settings">
+          <label>Voice <select id="mvVoice"></select></label>
+          <span class="mv-note">
+            Note
+            <button id="mvDown" class="btn ghost small" title="A semitone lower (↓)">▼</button>
+            <b id="mvNote"></b>
+            <button id="mvUp" class="btn ghost small" title="A semitone higher (↑)">▲</button>
+          </span>
+          <label title="How long the whole swell takes, soft to loud to soft">Length <select id="mvLength"></select></label>
+        </div>
+        <div id="mvStage" class="echo-stage mv-stage" tabindex="-1">
+          <div id="mvPhase" class="echo-phase"></div>
+          <div id="mvHint" class="muted echo-hint"></div>
+          <canvas id="mvCanvas" class="mv-canvas"></canvas>
+          <button id="mvDone" class="btn" hidden>Done</button>
+          <div id="mvResult" class="echo-result" hidden>
+            <div id="mvResultBody"></div>
+          </div>
+          <div class="echo-actions">
+            <button id="mvAgain" class="btn primary" title="Another swell (Enter)" hidden>Again</button>
+          </div>
+        </div>
+        <p id="mvStats" class="muted"></p>
+        <p class="note">
+          Volume is measured from the microphone, relative to the room's quiet (measured while you breathe in), so keep
+          the same distance to the microphone to compare swells. The thick line is the target: straight in dB up to the
+          middle and back, scaled to your last swell. Very soft singing (below about −42 dB) is too quiet for the pitch
+          line, which is normal at the soft ends.
+        </p>
+      </div>
+    </section>
 
     <section id="echo" class="page echo" hidden>
       <div class="echo-inner">
@@ -334,6 +378,7 @@
           <button data-tab="notes">Long notes</button>
           <button data-tab="echo">Echo</button>
           <button data-tab="syllables">Syllables</button>
+          <button data-tab="messa">Messa di voce</button>
         </div>
       </div>
       <p id="historyFor" class="muted"></p>

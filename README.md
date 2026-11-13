@@ -13,7 +13,7 @@ Open http://localhost:5173 in Chrome, Edge, Firefox or Safari. The browser only 
 
 ## Using it
 
-The menu bar has two pages, **Score** (singing from a score: everything below) and **Audiation** (the Echo trainer, with its Syllables mode), plus **History** and **Settings**, which open over either page, and the **Microphone** toggle with a live level and pitch. The app reopens on the page you used last. History opens on the tab that fits the page: Echo or Syllables on Audiation, the current score's run-throughs on Score.
+The menu bar has three pages, **Score** (singing from a score: everything below), **Audiation** (the Echo trainer, with its Syllables mode) and **Support** (messa di voce), plus **History** and **Settings**, which open over any page, and the **Microphone** toggle with a live level and pitch. The app reopens on the page you used last. History opens on the tab that fits the page: Echo or Syllables on Audiation, Messa di voce on Support, the current score's run-throughs on Score.
 
 - **Open score…** (or drag a file onto the score area) loads `.musicxml`, `.xml` or compressed `.mxl`. **Practice scores ▾** generates an exercise in any key, written out for soprano, alto, tenor, baritone (A2–E4, between tenor and bass) and bass (each in the comfortable middle of its range) plus piano. Choose your voice under **Your part**; the app remembers it for the next exercise:
   - *Scales*: major, natural minor, harmonic minor and chromatic, one octave up, a half rest, and back down.
@@ -72,6 +72,25 @@ Its levels follow the Kodály order of tone sets: sol mi; sol mi la; do mi sol l
 
 The **note map** on the left is a bar from red through yellow to green for each pitch in your range: how well that note has gone over its last 20 or so tries (1 in tune, falling to ½ at 50 cents off, 0 for a wrong or missed note). It counts first tries only, since a repeated phrase has been heard more often; notes tried only a few times are faint. Hover for the numbers; **Reset** clears it.
 
+### Messa di voce (Support)
+
+The **Support** page trains breath support with messa di voce: one sustained note, starting softly, swelling evenly to your loudest in the middle and fading evenly back to soft, all on the same pitch.
+
+- **Voice** picks the note: the middle of the voice's comfortable range. **▲ / ▼** (or the arrow keys) move it by a semitone within the range, so you can work through it. **Length** is the whole swell: 6, 8, 10, 12 or 15 s.
+- A round: the note plays, then **Breathe in** for 1.5 s while the room's quiet is measured, then sing. A line moves across the graph, with cues (Start softly, Grow, Loudest, Fade, Softly). It ends after a second of silence, or with Enter / **Done**. **Again** (Enter) sings another.
+- The graph shows **volume** (dB above the room's quiet) and **pitch** (cents from the note) live, against a target arch: straight in dB up to the middle and back, scaled to your previous swell.
+- The result lists:
+  - **range**: the loudest point above the softer of the two soft ends;
+  - **where the peak fell**: within 35–65% of the note counts as the middle;
+  - **evenness** of the crescendo and the diminuendo: how far each strays from a steady line, plus any **sag** while growing or **swell** while fading of 3 dB or more (orange dots on the graph);
+  - **pitch soft against loud**: going sharp as it grows usually means pushing, going flat when soft means sagging;
+  - overall **sharp/flat**;
+  - **where control gave out**: the voice stopped for 0.12 s, the pitch cracked (jumped more than 80 cents), or the pitch was lost while the voice still sounded (a red line on the graph; coming from and fading into silence at the ends doesn't count);
+  - whether you held the full length;
+  - **vibrato** or wobble in the loud part.
+
+Volume is relative: it depends on the microphone and your distance to it, so keep the same distance to compare swells and days. Very soft singing (below about −42 dB of full scale) is too quiet for the pitch tracker, so the pitch line starts a little after the volume line, which is normal. Each session (until you stop, change the note or length, or leave the page) goes into **History**.
+
 ### Pitch trainer
 
 Double-click a note in the score (any part) or in the pitch graph to practise that one note. The trainer opens across the full window and shows:
@@ -102,12 +121,13 @@ When you loop a section, each note's pitch is compared across passes. **Precisio
 
 ### History
 
-**History** has five tabs. Each one has a chart where you can pick the metric, plus a table; the bin icon at the end of a row deletes that entry (e.g. a test). Charts with a typical healthy range show it as a shaded band.
+**History** has six tabs. Each one has a chart where you can pick the metric, plus a table; the bin icon at the end of a row deletes that entry (e.g. a test). Charts with a typical healthy range show it as a shaded band.
 
 - **Run-throughs**: each time you sing the whole piece to the end with the microphone on. Metrics: score (0–100), share in tune (by note length), mean deviation, clean onsets, vibrato rate, width and regularity, and the share of notes with a wobble. A message after each run compares it with the last one.
 - **Loop practice**: recorded when you stop after at least three passes of a loop. Metrics: accuracy of your best pass (average deviation; passes with fewer than 80% of the notes sung don't count) and spread between passes (precision). The message compares it with your last session on the same bars.
 - **Long notes**: every note practised in the trainer for at least 2 seconds of singing, across all pieces. Metrics: share in tune, longest hold, mean deviation and vibrato.
 - **Syllables**: the same, for the Syllables mode, on its own ladder of 9 levels.
+- **Messa di voce**: each Support session: mean and best dynamic range, evenness, how far the peak was off-centre, the pitch change from soft to loud, the share of the length held, and how many swells lost control.
 - **Echo**: each Echo trainer session with at least one round, saved when you stop, close the trainer, change key or voice, or leave the page. Counts first tries only. Metrics: share of phrases right (every note within 50 cents) and in tune, highest level, mean deviation and landing time of the right notes, and how often your own rating matched.
 
 Each note in a run scores up to 100 points:

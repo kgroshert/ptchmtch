@@ -84,6 +84,28 @@ export interface EchoSession {
   toleranceCents: number;
 }
 
+/** A messa di voce session on the Support page. */
+export interface MessaSession {
+  date: number;
+  /** e.g. "F♯3 · Baritone · 10 s" */
+  context: string;
+  rounds: number;
+  /** Peak above the soft ends, dB: mean over the swells, and the best. */
+  meanRange: number;
+  bestRange: number;
+  /** How far the peak was from the middle of the note, 0..0.5 (mean). */
+  offCentre: number;
+  /** Mean distance from an even rise and fall, dB. */
+  evenness: number;
+  /** Mean size of the pitch change from soft to loud, cents (null if never measured). */
+  drift: number | null;
+  /** Share of the planned length held, 0..1 (mean). */
+  held: number;
+  /** Swells where control gave out (a break, a crack, or the pitch lost). */
+  lost: number;
+  minutes: number;
+}
+
 const MAX_ROWS = 1000;
 
 export const runsKey = (song: string, track: string) => `ptchmtch.history.${song}.${track}`;
@@ -91,6 +113,7 @@ export const loopsKey = (song: string, track: string) => `ptchmtch.loops.${song}
 export const TRAINER_KEY = "ptchmtch.trainer";
 export const ECHO_KEY = "ptchmtch.echo.sessions";
 export const SYL_KEY = "ptchmtch.syllables.sessions";
+export const MESSA_KEY = "ptchmtch.messa.sessions";
 
 export function loadRows<T>(key: string): T[] {
   try {
@@ -266,6 +289,29 @@ export const SYL_VIEW: View<EchoSession> = {
   ...ECHO_VIEW,
   empty: "No Syllables sessions yet. Open Audiation, switch to Syllables and sing a few rounds.",
   metrics: ECHO_VIEW.metrics.map((m) => (m.label === "Highest level" ? { ...m, range: [1, 9] as [number, number] } : m)),
+};
+
+export const MESSA_VIEW: View<MessaSession> = {
+  empty: "No messa di voce sessions yet. Open Support in the menu bar and sing a few swells.",
+  metrics: [
+    { label: "Dynamic range", unit: " dB", value: (r) => r.meanRange, better: "higher" },
+    { label: "Best range", unit: " dB", value: (r) => r.bestRange, better: "higher" },
+    { label: "Evenness (lower is smoother)", unit: " dB", value: (r) => r.evenness, better: "lower", digits: 1 },
+    { label: "Peak off-centre", unit: "%", value: (r) => r.offCentre * 100, better: "lower", range: [0, 50] },
+    { label: "Pitch change soft→loud", unit: "¢", value: (r) => r.drift, better: "lower" },
+    { label: "Length held", unit: "%", value: (r) => r.held * 100, better: "higher", range: [0, 100] },
+  ],
+  columns: [
+    { label: "When", cell: (r) => fmtDate(r.date) },
+    { label: "Note · voice · length", cell: (r) => r.context },
+    { label: "Swells", cell: (r) => `${r.rounds} <small>${num(r.minutes, 0, " min")}</small>` },
+    { label: "Range", cell: (r) => `${num(r.meanRange, 0, " dB")} <small>best ${num(r.bestRange, 0)}</small>`, strong: true },
+    { label: "Evenness", cell: (r) => num(r.evenness, 1, " dB") },
+    { label: "Peak off-centre", cell: (r) => pct(r.offCentre) },
+    { label: "Pitch soft→loud", cell: (r) => num(r.drift, 0, "¢") },
+    { label: "Held", cell: (r) => pct(r.held) },
+    { label: "Lost control", cell: (r) => `${r.lost}/${r.rounds}` },
+  ],
 };
 
 function osc(v: Vibrato | null): boolean {

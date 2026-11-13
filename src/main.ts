@@ -30,6 +30,9 @@ import {
   ECHO_VIEW,
   SYL_KEY,
   SYL_VIEW,
+  MESSA_KEY,
+  MESSA_VIEW,
+  type MessaSession,
   type EchoSession,
   upsertRow,
   type LoopSession,
@@ -45,6 +48,7 @@ import { oscillates } from "./vibrato";
 import { PitchTrainer } from "./trainer";
 import { EXERCISES, KEYS, generateExercise, type ExerciseId } from "./exercises";
 import { EchoTrainer } from "./echo";
+import { SupportTrainer } from "./support";
 
 type Mode = "lead" | "normal" | "mute";
 
@@ -472,6 +476,7 @@ function onSample(s: PitchSample): void {
   showLive(s.midi);
   trainer.push(s);
   echo.push(s);
+  support.push(s);
 
   const p = player;
   if (!p?.playing) return;
@@ -810,7 +815,7 @@ function hideToast(): void {
   $("toast").hidden = true;
 }
 
-type HistoryTab = "runs" | "loops" | "notes" | "echo" | "syllables";
+type HistoryTab = "runs" | "loops" | "notes" | "echo" | "syllables" | "messa";
 let historyTab: HistoryTab = "runs";
 
 function openHistory(): void {
@@ -819,7 +824,8 @@ function openHistory(): void {
   // the Score page. (Only when opening; the tabs then switch freely.)
   if (!$<HTMLDialogElement>("history").open) {
     if (page === "audiation") historyTab = echo.currentMode === "syllables" ? "syllables" : "echo";
-    else if (historyTab === "echo" || historyTab === "syllables") historyTab = "runs";
+    else if (page === "support") historyTab = "messa";
+    else if (historyTab === "echo" || historyTab === "syllables" || historyTab === "messa") historyTab = "runs";
   }
   const dlg = $<HTMLDialogElement>("history");
   for (const b of $("historyTabs").querySelectorAll<HTMLButtonElement>("button"))
@@ -831,6 +837,9 @@ function openHistory(): void {
   } else if (historyTab === "echo") {
     $("historyFor").textContent = "All Echo trainer sessions (first tries of each phrase).";
     renderView<EchoSession>(body, ECHO_KEY, ECHO_VIEW);
+  } else if (historyTab === "messa") {
+    $("historyFor").textContent = "All messa di voce sessions (Support page).";
+    renderView<MessaSession>(body, MESSA_KEY, MESSA_VIEW);
   } else if (historyTab === "syllables") {
     $("historyFor").textContent = "All Syllables sessions: solfège read and sung, without hearing it first.";
     renderView<EchoSession>(body, SYL_KEY, SYL_VIEW);
@@ -846,6 +855,7 @@ function openHistory(): void {
     runs: "A run is recorded when you sing the whole piece to the end with the microphone on. Each note scores up to 100: half for how close its pitch is, 30% for staying within tolerance, 20% for a clean entry. Vibrato is measured on notes held for at least 0.6 s; the shaded band is the typical healthy range.",
     loops: "A loop session is recorded when you stop after at least three passes of a looped selection. Accuracy is how far the notes were off on average in your best pass (passes with fewer than 80% of the notes sung don't count). Spread shows how differently each note came out from pass to pass (precision).",
     notes: "A session is recorded for each note you practise in the trainer for at least 2 seconds of singing. Vibrato is measured on the longest uninterrupted stretch.",
+    messa: "A session is recorded when you stop, change the note or length, or leave the page, if you sang at least one swell. Range: the loudest point above the softer of the two soft ends. Evenness: how far the volume strayed from a steady rise and fall. Volume is relative to the microphone, so compare sessions sung at the same distance.",
     syllables: "A session is recorded as for Echo, in the Syllables mode. Levels follow the Kodály order of tone sets (sol mi, then la, do, re, low la and sol, fa, ti), so they aren't the same as Echo's.",
     echo: "A session is recorded when you stop the Echo trainer, close it, change key or voice, or leave the page, if you sang at least one round. Only the first try of each phrase counts. Right: every note within 50 cents; in tune: every note within your tolerance.",
   }[historyTab];
@@ -883,6 +893,15 @@ const echo = new EchoTrainer($("echo"), {
 });
 
 echo.onSession = (s, mode) => addRow(mode === "syllables" ? SYL_KEY : ECHO_KEY, s);
+
+const support = new SupportTrainer($("support"), {
+  ctxTime: () => getPlayer().ctx.currentTime,
+  play: (notes, sound) => getPlayer().playNotes(notes, sound),
+  ensureMic: async () => !!(await ensureMic()),
+  toleranceCents: () => settings().toleranceCents,
+});
+support.onSession = (s) => addRow(MESSA_KEY, s);
+window.addEventListener("pagehide", () => support.endSession());
 // A session still running when the page goes away is kept too.
 window.addEventListener("pagehide", () => echo.endSession());
 
@@ -1666,16 +1685,18 @@ async function listDevices(): Promise<void> {
 
 // --- pages ----------------------------------------------------------------
 
-type Page = "score" | "audiation";
+type Page = "score" | "audiation" | "support";
 const PAGE_KEY = "ptchmtch.page";
 let page: Page = "score";
 
 function showPage(p: Page): void {
-  if (p === "audiation") stop();
+  if (p !== "score") stop();
   page = p;
   $("pageScore").hidden = p !== "score";
   if (p === "audiation") echo.open();
   else echo.close();
+  if (p === "support") support.open();
+  else support.close();
   for (const b of $("nav").querySelectorAll<HTMLButtonElement>("[data-page]")) {
     b.classList.toggle("on", b.dataset.page === p);
     b.setAttribute("aria-current", b.dataset.page === p ? "page" : "false");
@@ -1690,7 +1711,8 @@ function showPage(p: Page): void {
 for (const b of $("nav").querySelectorAll<HTMLButtonElement>("[data-page]"))
   b.addEventListener("click", () => showPage(b.dataset.page as Page));
 try {
-  showPage(localStorage.getItem(PAGE_KEY) === "audiation" ? "audiation" : "score");
+  const saved = localStorage.getItem(PAGE_KEY);
+  showPage(saved === "audiation" || saved === "support" ? saved : "score");
 } catch {
   showPage("score");
 }
@@ -1699,4 +1721,4 @@ bindControls();
 refresh();
 updateSummary();
 
-if (import.meta.env.DEV) Object.assign(window, { __app: { score, roll, calibration, echo, get player() { return player; } } });
+if (import.meta.env.DEV) Object.assign(window, { __app: { score, roll, calibration, echo, support, get player() { return player; } } });

@@ -126,8 +126,15 @@ body {
   .menubar .brand {
     display: none;
   }
+  .nav {
+    /* Five pages: smaller, and scrollable if a very narrow phone still can't fit them. */
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
   .nav button {
-    padding: 6px 7px;
+    padding: 6px 4px;
+    font-size: 13px;
   }
   .mic-label,
   .menubar .meter {
@@ -1507,4 +1514,69 @@ dialog.detect {
   align-items: center;
   gap: 6px;
   font-size: 13px;
+}
+
+/* ---- support: messa di voce ---- */
+
+.mv-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mv-note b {
+  min-width: 3em;
+  text-align: center;
+  font-size: 16px;
+}
+
+.mv-stage {
+  justify-items: stretch;
+}
+
+.mv-stage > .echo-phase,
+.mv-stage > .echo-hint,
+.mv-stage > .btn {
+  justify-self: center;
+}
+
+.mv-canvas {
+  display: block;
+  width: 100%;
+  height: clamp(260px, 46vh, 460px);
+}
+
+.mv-findings {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 640px;
+  display: grid;
+  gap: 6px;
+  text-align: left;
+}
+
+.mv-findings li {
+  padding: 6px 10px 6px 28px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  position: relative;
+}
+
+.mv-findings li::before {
+  position: absolute;
+  left: 9px;
+  top: 6px;
+  font-weight: 700;
+}
+
+.mv-findings li.ok::before {
+  content: "✓";
+  color: #3a9a4a;
+}
+
+.mv-findings li.warn::before {
+  content: "!";
+  color: #e08a2a;
 }
