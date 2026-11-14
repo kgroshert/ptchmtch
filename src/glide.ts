@@ -118,59 +118,134 @@ export function foldOctaves(cents: number, interval: number): number {
 }
 
 /**
- * Fits the top of a glide as a line up (from `a`), a level stretch [hl, hr] and a line down (to
- * `b`), choosing hl ≤ p ≤ hr (p = the highest point) with the least squared error. Only frames
- * near the top are candidates. Sums are prefix sums, so each candidate costs O(1).
+ * Squared-error sums over the smoothed pitch between frames a and b, from prefix sums, so fitting
+ * a line or a level stretch to any range costs O(1). Used to fit a glide's shape piece by piece.
  */
-function fitTop(frames: SupportFrame[], sc: (number | null)[], a: number, p: number, b: number, topC: number): [number, number] {
-  const n = sc.length;
-  const N = new Float64Array(n + 1), T = new Float64Array(n + 1), C = new Float64Array(n + 1);
-  const TT = new Float64Array(n + 1), CC = new Float64Array(n + 1), TC = new Float64Array(n + 1);
-  for (let i = 0; i < n; i++) {
-    const c = sc[i];
-    const t = frames[i].t;
-    const on = c !== null && i >= a && i <= b ? 1 : 0;
-    N[i + 1] = N[i] + on;
-    T[i + 1] = T[i] + on * t;
-    C[i + 1] = C[i] + on * (c ?? 0);
-    TT[i + 1] = TT[i] + on * t * t;
-    CC[i + 1] = CC[i] + on * (c ?? 0) ** 2;
-    TC[i + 1] = TC[i] + on * t * (c ?? 0);
+class Fitter {
+  private N: Float64Array;
+  private T: Float64Array;
+  private C: Float64Array;
+  private TT: Float64Array;
+  private CC: Float64Array;
+  private TC: Float64Array;
+
+  constructor(
+    private frames: SupportFrame[],
+    private sc: (number | null)[],
+  ) {
+    const n = sc.length;
+    const mk = () => new Float64Array(n + 1);
+    this.N = mk(); this.T = mk(); this.C = mk(); this.TT = mk(); this.CC = mk(); this.TC = mk();
+    for (let i = 0; i < n; i++) {
+      const c = sc[i] ?? 0;
+      const t = frames[i].t;
+      const on = sc[i] !== null ? 1 : 0;
+      this.N[i + 1] = this.N[i] + on;
+      this.T[i + 1] = this.T[i] + on * t;
+      this.C[i + 1] = this.C[i] + on * c;
+      this.TT[i + 1] = this.TT[i] + on * t * t;
+      this.CC[i + 1] = this.CC[i] + on * c * c;
+      this.TC[i + 1] = this.TC[i] + on * t * c;
+    }
   }
-  const sum = (A: Float64Array, i0: number, i1: number) => A[i1 + 1] - A[i0];
-  const lineErr = (i0: number, i1: number) => {
-    const k = sum(N, i0, i1);
-    if (k < 2 || sc[i0] === null || sc[i1] === null) return 0;
-    const t0 = frames[i0].t, c0 = sc[i0]!, dt = frames[i1].t - t0;
-    const st = sum(T, i0, i1), scs = sum(C, i0, i1);
-    const su2 = sum(TT, i0, i1) - 2 * t0 * st + k * t0 * t0;
-    const sv2 = sum(CC, i0, i1) - 2 * c0 * scs + k * c0 * c0;
-    const suv = sum(TC, i0, i1) - c0 * st - t0 * scs + k * t0 * c0;
+
+  private sum(A: Float64Array, i0: number, i1: number): number {
+    return A[i1 + 1] - A[i0];
+  }
+
+  /** Error of the line from (t(i0), c0) to (t(i1), c1) over frames i0..i1. */
+  line(i0: number, i1: number, c0: number, c1: number): number {
+    const k = this.sum(this.N, i0, i1);
+    if (!k) return 0;
+    const t0 = this.frames[i0].t;
+    const dt = this.frames[i1].t - t0;
+    const st = this.sum(this.T, i0, i1);
+    const scs = this.sum(this.C, i0, i1);
+    const su2 = this.sum(this.TT, i0, i1) - 2 * t0 * st + k * t0 * t0;
+    const sv2 = this.sum(this.CC, i0, i1) - 2 * c0 * scs + k * c0 * c0;
+    const suv = this.sum(this.TC, i0, i1) - c0 * st - t0 * scs + k * t0 * c0;
     if (dt <= 0) return sv2;
-    const slope = (sc[i1]! - c0) / dt;
+    const slope = (c1 - c0) / dt;
     return sv2 - 2 * slope * suv + slope * slope * su2;
-  };
-  const flatErr = (i0: number, i1: number) => {
-    const k = sum(N, i0, i1);
-    return k ? sum(CC, i0, i1) - sum(C, i0, i1) ** 2 / k : 0;
-  };
-  // Candidates: frames with a pitch within 80¢ of the highest point, at most ~150 per side.
-  const near = (i: number) => sc[i] !== null && topC - sc[i]! <= 80;
+  }
+
+  /** Mean over frames i0..i1 (NaN when none has a pitch). */
+  mean(i0: number, i1: number): number {
+    return this.sum(this.C, i0, i1) / this.sum(this.N, i0, i1);
+  }
+
+  /** Error of a level stretch at its mean over frames i0..i1. */
+  flat(i0: number, i1: number): number {
+    const k = this.sum(this.N, i0, i1);
+    return k ? this.sum(this.CC, i0, i1) - this.sum(this.C, i0, i1) ** 2 / k : 0;
+  }
+
+  /** The candidates among `xs` (at most ~150, evenly picked) that have a pitch. */
+  thin(xs: number[]): number[] {
+    const step = Math.max(1, Math.ceil(xs.length / 150));
+    return xs.filter((i, k) => k % step === 0 && this.sc[i] !== null);
+  }
+}
+
+/**
+ * The top of a glide: a line up from `a`, a level stretch [hl, hr] and a line down to `b`, with
+ * hl ≤ p ≤ hr (p = the highest point), whichever fits best. Only frames within 80¢ of the highest
+ * point are candidates; a sharp turn comes out as a level stretch of (almost) no length.
+ */
+function fitTop(f: Fitter, sc: (number | null)[], a: number, ca: number, p: number, b: number, cb: number, topC: number): [number, number] {
+  const near = (i: number) => sc[i] === null || topC - sc[i]! <= 80;
   const left: number[] = [];
   for (let i = p; i >= a && near(i); i--) left.push(i);
   const right: number[] = [];
   for (let i = p; i <= b && near(i); i++) right.push(i);
-  const thin = (xs: number[]) => xs.filter((_, k) => k % Math.max(1, Math.ceil(xs.length / 150)) === 0);
   let best: [number, number] = [p, p];
   let bestErr = Infinity;
-  for (const hl of thin(left))
-    for (const hr of thin(right)) {
-      const err = lineErr(a, hl) + flatErr(hl, hr) + lineErr(hr, b);
+  for (const hl of f.thin(left))
+    for (const hr of f.thin(right)) {
+      const err = f.line(a, hl, ca, sc[hl]!) + f.flat(hl, hr) + f.line(hr, b, sc[hr]!, cb);
       if (err < bestErr) {
         bestErr = err;
         best = [hl, hr];
       }
     }
+  return best;
+}
+
+/**
+ * Where the way up really starts: a level stretch on the first note from `s` to k, then a line
+ * from there (at that level) to the top at `hl`, whichever k fits best. Wavering or a false start
+ * on the first note is part of the level stretch, so it doesn't pull the line.
+ */
+function fitStart(f: Fitter, sc: (number | null)[], s: number, hl: number): { k: number; level: number } {
+  const xs: number[] = [];
+  for (let i = s; i < hl; i++) xs.push(i);
+  let best = { k: s, level: sc[s]! };
+  let bestErr = Infinity;
+  for (const k of f.thin(xs)) {
+    const level = k > s ? f.mean(s, k) : sc[s]!;
+    const err = (k > s ? f.flat(s, k) : 0) + f.line(k, hl, level, sc[hl]!);
+    if (err < bestErr) {
+      bestErr = err;
+      best = { k, level };
+    }
+  }
+  return best;
+}
+
+/** Where the way down really ends: a line from the top at `hr` to k, then a level stretch to `e`. */
+function fitEnd(f: Fitter, sc: (number | null)[], hr: number, e: number): { k: number; level: number } {
+  const xs: number[] = [];
+  for (let i = e; i > hr; i--) xs.push(i);
+  let best = { k: e, level: sc[e]! };
+  let bestErr = Infinity;
+  for (const k of f.thin(xs)) {
+    const level = k < e ? f.mean(k, e) : sc[e]!;
+    const err = f.line(hr, k, sc[hr]!, level) + (k < e ? f.flat(k, e) : 0);
+    if (err < bestErr) {
+      bestErr = err;
+      best = { k, level };
+    }
+  }
   return best;
 }
 
@@ -213,27 +288,31 @@ export function analyseGlide(frames: SupportFrame[], floorDb: number, interval: 
   const startCents = sc[s]!;
   const rose = topC - startCents >= full / 2;
 
-  // Settling on the first note and landing on the last: the leg starts where the pitch leaves the
-  // first note (by more than 30¢) and ends where it arrives at the last. A pitch band works here,
-  // where speed doesn't: the smoothing is one-sided at the ends of the judged span.
-  const bandRef = (from0: number, dir: 1 | -1) => {
-    const xs: number[] = [];
-    for (let i = from0; i >= s && i <= e && Math.abs(t(i) - t(from0)) <= 0.3; i += dir) if (sc[i] !== null) xs.push(sc[i]!);
-    return median(xs);
-  };
-  const startRef = bandRef(s, 1);
-  const endRef = bandRef(e, -1);
-  let s1 = s;
-  while (s1 < p && (sc[s1 + 1] === null || Math.abs(sc[s1 + 1]! - startRef) <= 30)) s1++;
-  let e0 = e;
-  while (e0 > p && (sc[e0 - 1] === null || Math.abs(sc[e0 - 1]! - endRef) <= 30)) e0--;
-  const upStart = s1 < p ? s1 : s;
-  const downEnd = e0 > p ? e0 : e;
-
-  // The top: up, an optional plateau, down. Holding the top note a while is fine, so the turn is
-  // fitted as three pieces (a line up, a level stretch, a line down) with the least squared error;
-  // a sharp turn comes out as a plateau of (almost) no length.
-  const [hl, hr] = fitTop(frames, sc, upStart, p, downEnd, topC);
+  // The shape: a level start, a line up, a level top, a line down, a level landing, fitted piece by
+  // piece. The way up starts where the pitch really leaves the first note (wavering or a false
+  // start before it doesn't count), the way down ends where it arrives at the last, the top may be
+  // held a while. Fitted twice: the top first roughly, then the ends, then the top again.
+  const fit = new Fitter(frames, sc);
+  const [hl0, hr0] = fitTop(fit, sc, s, sc[s]!, p, e, sc[e]!, topC);
+  const st = fitStart(fit, sc, s, hl0);
+  const en = fitEnd(fit, sc, hr0, e);
+  // A dip below the first note just before the rise is a run-up, not the glide: the way up starts
+  // at the last moment the pitch is (back) at the first note's level before it climbs. Likewise
+  // the way down ends the first time it reaches the last note's level.
+  let upStart = st.k;
+  for (let i = hl0 - 1; i >= st.k; i--)
+    if (sc[i] !== null && sc[i]! <= st.level + 10) {
+      upStart = i;
+      break;
+    }
+  let downEnd = en.k;
+  for (let i = hr0 + 1; i <= en.k; i++)
+    if (sc[i] !== null && sc[i]! <= en.level + 10) {
+      downEnd = i;
+      break;
+    }
+  // The top: holding the top note a while is fine.
+  const [hl, hr] = fitTop(fit, sc, upStart, sc[upStart]!, p, downEnd, sc[downEnd]!, topC);
   const plateau = t(hr) - t(hl) >= 0.3;
   const topLevel = plateau ? median(sc.slice(hl, hr + 1).filter((c): c is number => c !== null)) : topC;
   const held = t(hr) - t(hl) >= TOP_HOLD_SECONDS;
@@ -244,6 +323,7 @@ export function analyseGlide(frames: SupportFrame[], floorDb: number, interval: 
   const cameDown = rose && topC - lowest >= full / 2;
   const landing: number[] = [];
   for (let i = downEnd; i <= e; i++) if (sc[i] !== null) landing.push(sc[i]!);
+  if (!landing.length) landing.push(en.level);
 
   const leg = (i0: number, i1: number, dir: 1 | -1): GlideLeg => {
     const t0 = t(i0);
@@ -320,13 +400,19 @@ export function analyseGlide(frames: SupportFrame[], floorDb: number, interval: 
           if (!down || tt <= down.from) return topC;
           return tt >= down.to ? down.c1 : down.c0 + ((down.c1 - down.c0) * (tt - down.from)) / Math.max(1e-6, down.to - down.from);
         };
-  const lost = findLost(frames, a, b, floorDb, expected, true, gateDb);
+  // Only the glide itself is judged: a false start before it or wobbles after landing aren't lost
+  // control (when there was no full glide, the whole span, without its edges).
+  const lost = up && down ? findLost(frames, upStart, downEnd, floorDb, expected, false, gateDb) : findLost(frames, a, b, floorDb, expected, true, gateDb);
   if (lost?.reason === "crack")
     for (const l of [up, down]) if (l) l.jumps = l.jumps.filter((j) => Math.abs(j.t - lost.t) >= 0.3);
 
   // Steady support: the level around its own median.
   const mid: number[] = [];
-  for (let i = a; i <= b; i++) if (t(i) >= from + LEG_EDGE && t(i) <= to - LEG_EDGE) mid.push(i);
+  // Over the glide itself when there was one (a false start or the landing aren't support), else
+  // the voiced span without its edges.
+  const v0 = up && down ? up.from : from + LEG_EDGE;
+  const v1 = up && down ? down.to : to - LEG_EDGE;
+  for (let i = a; i <= b; i++) if (t(i) >= v0 && t(i) <= v1) mid.push(i);
   const levelDb = mid.length ? median(mid.map((i) => smooth[i])) : median(smooth.slice(a, b + 1));
   const volumeDev = mid.length ? Math.sqrt(mid.reduce((acc, i) => acc + (smooth[i] - levelDb) ** 2, 0) / mid.length) : 0;
   const pitchAt = (i: number) => {
@@ -492,8 +578,10 @@ export class GlideExercise implements SupportExercise {
     return (voicedFor >= 2 && silentFor >= 1) || t > 60;
   }
 
+  /** While singing: 20 s, growing as needed. With a result: just the glide, so it fills the width. */
   timeSpan(frames: SupportFrame[]): number {
-    return Math.max(25, (frames.length ? frames[frames.length - 1].t : 0) + 1, (this.result?.to ?? 0) + 1);
+    if (this.result) return this.result.to + 0.5;
+    return Math.max(20, (frames.length ? frames[frames.length - 1].t : 0) + 2);
   }
 
   pitchRange(): [number, number] {

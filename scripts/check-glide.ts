@@ -12,7 +12,7 @@ interface Opts {
   overshoot?: number; endCents?: number; vib?: boolean; roundTurn?: boolean; scoop?: boolean;
   volPerCent?: number; slip?: number; upOnly?: boolean; flat?: boolean; hold?: number;
   vibAmp?: number; vibHz?: number; settle?: number; land?: number; slipDur?: number;
-  holdWander?: number; holdCreep?: number; holdOffset?: number; crackAt?: number; octErrors?: boolean; onsetOct?: boolean; breathy?: boolean; falloff?: boolean; scoopCents?: number; scoopDur?: number;
+  dipBefore?: boolean; falseStart?: boolean; wobblyLanding?: boolean; holdWander?: number; holdCreep?: number; holdOffset?: number; crackAt?: number; octErrors?: boolean; onsetOct?: boolean; breathy?: boolean; falloff?: boolean; scoopCents?: number; scoopDur?: number;
 }
 
 function glide(o: Opts = {}): SupportFrame[] {
@@ -56,6 +56,15 @@ function glide(o: Opts = {}): SupportFrame[] {
       if (o.vib) c += (o.vibAmp ?? 40) * Math.sin(2 * Math.PI * (o.vibHz ?? 5.5) * t);
       if (o.slip && t >= o.slip && t < o.slip + (o.slipDur ?? 0.2)) c += 1200;
       if (o.onsetOct && t - sing < 0.15) c += 1200;
+      // A false start: the first note wavers (short swings up), then dips 100¢ just before the rise.
+      if (o.falseStart && t < start) {
+        if (Math.sin(t * 9.1) > 0.85) c += 70;
+        if (t > start - 0.4) c -= 100 * Math.sin((Math.PI * (t - (start - 0.4))) / 0.4);
+      }
+      // Sinking 90¢ below the first note just before the rise, then climbing straight into the glide.
+      if (o.dipBefore && t > start - 0.65 && t < start) c -= t < start - 0.2 ? (90 * (t - (start - 0.65))) / 0.45 : (90 * (start - t)) / 0.2;
+      // A wobbly landing: the last note swings ±40¢ at 3 Hz after arriving.
+      if (o.wobblyLanding && t > downAt + down) c += 40 * Math.sin(2 * Math.PI * 3 * (t - downAt - down));
       if (o.crackAt && t >= o.crackAt && t < o.crackAt + 0.3) c += 300;
       // A phone mic on low notes: the tracker jumps an octave up in bursts of 0.1–0.4 s on the way down.
       if (o.octErrors && t > turn + hold && Math.sin(t * 7.3) + Math.sin(t * 2.9) > 0.6) c += 1200;
@@ -193,6 +202,21 @@ clean("scoop −200¢ over 0.4 s", { scoopCents: -200, scoopDur: 0.4, seed: 45 }
 clean("scoop −300¢ over 0.5 s", { scoopCents: -300, scoopDur: 0.5, seed: 46 });
 clean("octave errors on the way down", { octErrors: true, seed: 61 });
 clean("octave errors, fifth", { octErrors: true, interval: 7, seed: 62 });
+
+// The legs start where the glide really starts and end where it arrives, whatever comes before or after.
+{
+  const r = clean("false start", { settle: 1.6, falseStart: true, seed: 81 });
+  expect("false start: up starts at the rise", between(r?.up?.from, 2.0 - 0.15, 2.0 + 0.5), `${r?.up?.from}`);
+}
+{
+  const r = clean("wobbly landing", { land: 2, wobblyLanding: true, seed: 82 });
+  expect("wobbly landing: down ends at arrival", between(r?.down?.to, 20.9 - 0.5, 20.9 + 0.15), `${r?.down?.to}`);
+}
+
+{
+  const r = clean("dip before the rise", { settle: 1.6, dipBefore: true, seed: 83 });
+  expect("dip before the rise: up starts after the dip", between(r?.up?.from, 1.9, 2.4), `${r?.up?.from}`);
+}
 
 // A plateau at the top is fine: hold the top note a while, then come down.
 {
