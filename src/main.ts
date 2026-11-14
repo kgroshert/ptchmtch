@@ -81,6 +81,8 @@ interface Prefs {
   pitchMethod: DetectorId;
   pitchThresholds: Partial<Record<DetectorId, number>>;
   pitchWindow: number;
+  /** Pitch tracker gate (RMS) for this device's microphone; set by Calibrate. */
+  micGate: number;
   /** Playback sounds of the practised part and of the other parts. */
   soundMine: Instrument;
   soundOthers: Instrument;
@@ -109,6 +111,7 @@ const DEFAULTS: Prefs = {
   pitchMethod: "mpm",
   pitchThresholds: {},
   pitchWindow: 2048,
+  micGate: 0.008,
   soundMine: "piano",
   soundOthers: "piano",
 };
@@ -474,7 +477,11 @@ function frame(): void {
 
 // --- pitch input ----------------------------------------------------------
 
+/** Levels collected while calibrating the microphone (null when not calibrating). */
+let calLevels: number[] | null = null;
+
 function onSample(s: PitchSample): void {
+  calLevels?.push(s.level);
   $("level").style.width = `${Math.min(100, s.level * 400)}%`;
   showLive(s.midi);
   trainer.push(s);
@@ -579,9 +586,57 @@ function applyDetection(): void {
   tracker.method = prefs.pitchMethod;
   for (const d of DETECTORS) tracker.thresholds[d.id] = thresholdOf(d.id);
   tracker.windowSize = prefs.pitchWindow;
+  tracker.gate = prefs.micGate;
+}
+
+const toDb = (rms: number) => Math.round(20 * Math.log10(Math.max(1e-6, rms)));
+/** The threshold sits this far above the room's noise; it stays within these limits. */
+const CAL_MARGIN_DB = 10;
+const CAL_MIN_DB = -75;
+const CAL_MAX_DB = -30;
+
+function showMicGate(): void {
+  $("micGateSummary").textContent = `Pitch from ${toDb(prefs.micGate)} dB${prefs.micGate === DEFAULTS.micGate ? " (default)" : " (calibrated)"}`;
+}
+
+/**
+ * Measures the room's quiet for 2 s and sets the pitch threshold a little above it: the loudest
+ * tenth of the noise plus CAL_MARGIN_DB. Each device keeps its own (prefs live in this browser).
+ */
+async function calibrateMic(): Promise<void> {
+  const status = $("micCalStatus");
+  const btn = $<HTMLButtonElement>("micCalibrate");
+  if (!(await ensureMic())) return;
+  btn.disabled = true;
+  status.textContent = "Stay quiet for 2 seconds…";
+  calLevels = [];
+  await new Promise((r) => setTimeout(r, 2000));
+  const levels = calLevels.sort((a, b) => a - b);
+  calLevels = null;
+  btn.disabled = false;
+  if (levels.length < 20) {
+    status.textContent = "Couldn't measure: is the microphone on?";
+    return;
+  }
+  const noise = levels[Math.floor(levels.length * 0.9)];
+  const db = Math.min(CAL_MAX_DB, Math.max(CAL_MIN_DB, toDb(noise) + CAL_MARGIN_DB));
+  prefs.micGate = 10 ** (db / 20);
+  savePrefs();
+  applyDetection();
+  showMicGate();
+  status.textContent = `Room noise ${toDb(noise)} dB, so pitch is now detected from ${db} dB up.${db === CAL_MAX_DB ? " That's a noisy room: quiet singing may not show a pitch." : ""} Check it under Pitch detection (Change…): the input level is shown while you sing.`;
 }
 
 function bindDetection(): void {
+  showMicGate();
+  $("micCalibrate").addEventListener("click", () => void calibrateMic());
+  $("micGateReset").addEventListener("click", () => {
+    prefs.micGate = DEFAULTS.micGate;
+    savePrefs();
+    applyDetection();
+    showMicGate();
+    $("micCalStatus").textContent = "Back to the default threshold.";
+  });
   const dlg = $<HTMLDialogElement>("detect");
   const rows = $("detectRows");
   const slider = $<HTMLInputElement>("detectThreshold");
@@ -638,6 +693,10 @@ function bindDetection(): void {
 
   const onCompare = (readings: MethodReading[], level: number) => {
     const now = performance.now() / 1000;
+    // The input level against the pitch gate: below it, no method gets to listen.
+    const dbfs = (x: number) => Math.round(20 * Math.log10(Math.max(1e-6, x)));
+    const gate = tracker?.gate ?? 0;
+    $("detectLevel").textContent = `Input level ${dbfs(level)} dB (pitch is detected from ${dbfs(gate)} dB up)${level < gate ? ": too quiet for pitch" : ""}.`;
     for (const r of readings) {
       const tr = rows.querySelector<HTMLElement>(`tr[data-id="${r.id}"]`)!;
       const e = r.estimate;
@@ -906,6 +965,7 @@ const support = new SupportTrainer($("support"), {
   play: (notes, sound) => getPlayer().playNotes(notes, sound),
   ensureMic: async () => !!(await ensureMic()),
   toleranceCents: () => settings().toleranceCents,
+  pitchGate: () => prefs.micGate,
 });
 support.onSession = (s) => addRow(MESSA_KEY, s);
 support.onGlideSession = (s) => addRow(GLIDE_KEY, s);

@@ -12,7 +12,7 @@ interface Opts {
   overshoot?: number; endCents?: number; vib?: boolean; roundTurn?: boolean; scoop?: boolean;
   volPerCent?: number; slip?: number; upOnly?: boolean; flat?: boolean; hold?: number;
   vibAmp?: number; vibHz?: number; settle?: number; land?: number; slipDur?: number;
-  onsetOct?: boolean; breathy?: boolean; falloff?: boolean; scoopCents?: number; scoopDur?: number;
+  crackAt?: number; octErrors?: boolean; onsetOct?: boolean; breathy?: boolean; falloff?: boolean; scoopCents?: number; scoopDur?: number;
 }
 
 function glide(o: Opts = {}): SupportFrame[] {
@@ -55,6 +55,9 @@ function glide(o: Opts = {}): SupportFrame[] {
       if (o.vib) c += (o.vibAmp ?? 40) * Math.sin(2 * Math.PI * (o.vibHz ?? 5.5) * t);
       if (o.slip && t >= o.slip && t < o.slip + (o.slipDur ?? 0.2)) c += 1200;
       if (o.onsetOct && t - sing < 0.15) c += 1200;
+      if (o.crackAt && t >= o.crackAt && t < o.crackAt + 0.3) c += 300;
+      // A phone mic on low notes: the tracker jumps an octave up in bursts of 0.1–0.4 s on the way down.
+      if (o.octErrors && t > turn + hold && Math.sin(t * 7.3) + Math.sin(t * 2.9) > 0.6) c += 1200;
       db = -34 + (rand() - 0.5) * 1.5 + (o.volPerCent ?? 0) * line(t);
       if (o.sagAt && t >= o.sagAt && t < o.sagAt + 0.6) db -= 6;
       cents = db < GATE || (o.breathy && t - sing < 0.3) ? null : c;
@@ -148,10 +151,15 @@ for (let s = 1; s <= 3; s++) clean(`clean seed ${s}`, { seed: 100 + s });
   expect("no glide: no legs", r === null || r.up === null, show(r));
 }
 {
+  // An exact octave slip is a tracker error, not the voice: folded back, so neither crack nor jump.
   const r = run({ slip: 6 });
-  expect("octave slip: a crack", r?.lost?.reason === "crack" && between(r.lost.t, 5.9, 6.1), JSON.stringify(r?.lost));
+  expect("octave slip: not a crack", r?.lost === null, JSON.stringify(r?.lost));
   const near = [...(r?.up?.jumps ?? []), ...(r?.down?.jumps ?? [])].filter((j) => Math.abs(j.t - 6) < 0.3);
-  expect("octave slip: no jump as well", near.length === 0, JSON.stringify(near));
+  expect("octave slip: no jump", near.length === 0, JSON.stringify(near));
+}
+{
+  const r = run({ crackAt: 6 });
+  expect("voice crack (+300¢): a crack", r?.lost?.reason === "crack" && between(r.lost.t, 5.9, 6.1), JSON.stringify(r?.lost));
 }
 // Review findings: real-voice conditions.
 clean("vibrato ±60 5 Hz", { vib: true, vibAmp: 60, vibHz: 5 });
@@ -182,4 +190,15 @@ clean("breathy onset", { breathy: true, seed: 42 });
 clean("scoop −150¢", { scoopCents: -150, scoopDur: 0.3, seed: 44 });
 clean("scoop −200¢ over 0.4 s", { scoopCents: -200, scoopDur: 0.4, seed: 45 });
 clean("scoop −300¢ over 0.5 s", { scoopCents: -300, scoopDur: 0.5, seed: 46 });
+clean("octave errors on the way down", { octErrors: true, seed: 61 });
+clean("octave errors, fifth", { octErrors: true, interval: 7, seed: 62 });
+
+// The no-pitch rule follows the microphone threshold: a quiet phone mic calibrated to −65 dB.
+{
+  const quiet = glide({ seed: 51 }).map((f) => ({ ...f, db: f.db - 21, cents: f.t > 6 && f.t < 6.4 ? null : f.cents }));
+  const r = analyseGlide(quiet, -91, 4, LOW, -65);
+  expect("quiet mic, calibrated: dropout is lost pitch", r?.lost?.reason === "no pitch", JSON.stringify(r?.lost));
+  const r2 = analyseGlide(quiet.map((f) => ({ ...f, cents: f.t > 6 && f.t < 6.4 ? f.cents : f.cents })), -91, 4, LOW, -65);
+  expect("quiet mic, calibrated: glide judged", !!r2?.up && !!r2.down, show(r2));
+}
 done("glide");

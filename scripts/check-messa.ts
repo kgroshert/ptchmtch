@@ -71,4 +71,10 @@ for (let s = 0; s < 5; s++) {
   const r = run(fade.map((f) => ({ ...f, db: f.db + (rand() - 0.5) * 2 })));
   expect(`fade-out ${s}: not lost`, r.lost === null, JSON.stringify(r.lost));
 }
+// The no-pitch rule follows the microphone threshold: a quiet phone mic calibrated to −62 dB.
+{
+  const quiet = make({ lostAt: 4.5 }).map((f) => ({ ...f, db: f.db - 20, cents: f.db - 20 < -62 ? null : f.cents }));
+  const r = analyseMessa(quiet, -90, 10, -62)!;
+  expect("quiet mic, calibrated: no pitch at 4.5 s", r.lost?.reason === "no pitch" && between(r.lost.t, 4.4, 4.6), JSON.stringify(r.lost));
+}
 done("messa");

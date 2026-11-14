@@ -204,7 +204,7 @@
         <p class="note">
           <span data-for="messa">Volume is measured from the microphone, relative to the room's quiet (measured while you
           breathe in), so keep the same distance to the microphone to compare swells. The thick line is the target:
-          straight in dB up to the middle and back, scaled to your last swell. Very soft singing (below about −42 dB) is
+          straight in dB up to the middle and back, scaled to your last swell. Very soft singing (below the microphone threshold in Settings) is
           too quiet for the pitch line, which is normal at the soft ends.</span>
           <span data-for="glide">Pitch is shown from the low note, with the notes in between as landmarks. The pace is
           yours: evenness is judged against straight lines between where you started, turned and landed (drawn dashed
@@ -450,6 +450,15 @@
             <button id="detectBtn" type="button" class="btn ghost small">Change…</button>
           </div>
         </div>
+        <div class="stack">
+          Microphone threshold
+          <div class="detect-row">
+            <span id="micGateSummary"></span>
+            <button id="micCalibrate" type="button" class="btn ghost small" title="Measure the room's quiet and set the threshold just above it">Calibrate…</button>
+            <button id="micGateReset" type="button" class="btn ghost small" title="Back to −42 dB">Reset</button>
+          </div>
+          <span id="micCalStatus" class="muted">Pitch is only detected above this level. If quiet singing shows no pitch (phones often need this), calibrate: stay quiet for 2 seconds where you sing.</span>
+        </div>
         <label class="stack">
           Tolerance
           <select id="tolerance">
@@ -497,6 +506,7 @@
         Sing (or lip-trill) while this is open: the table compares all methods on your voice right now. Click a row to use
         that method.
       </p>
+      <p id="detectLevel" class="muted"></p>
       <table class="detect-table">
         <thead>
           <tr><th>Method</th><th>Note</th><th>Confidence</th><th>Detected, last 3 s</th></tr>

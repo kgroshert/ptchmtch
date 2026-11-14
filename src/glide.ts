@@ -9,7 +9,7 @@ import type { GlideSession } from "./history";
 import { midiName } from "./pitch";
 import type { DrawView, Note, SupportExercise, SupportPrefs } from "./support";
 import { analyseVibrato, type Vibrato } from "./vibrato";
-import { BUMP_DB, findLost, median, smoothDb, voicedSpan, type LostReason, type SupportFrame } from "./support-analysis";
+import { BUMP_DB, DEFAULT_GATE_DB, findLost, median, smoothDb, voicedSpan, type LostReason, type SupportFrame } from "./support-analysis";
 
 /** A drift from the even line larger than this is flagged, cents. */
 export const DRIFT_CENTS = 30;
@@ -110,8 +110,19 @@ function smoothPitch(frames: SupportFrame[], a: number, b: number): (number | nu
   return pass(pass(first));
 }
 
-export function analyseGlide(frames: SupportFrame[], floorDb: number, interval: number, lowMidi: number): GlideResult | null {
+/**
+ * Moves a reading that is a whole octave off back into the glide: anything more than half an
+ * octave from the glide's middle must be a tracker octave error (common on phones for low notes,
+ * where the fundamental is weak), since the glide only spans a third or a fifth. Idempotent.
+ */
+export function foldOctaves(cents: number, interval: number): number {
+  const mid = (interval * 100) / 2;
+  return cents - 1200 * Math.round((cents - mid) / 1200);
+}
+
+export function analyseGlide(frames: SupportFrame[], floorDb: number, interval: number, lowMidi: number, gateDb = DEFAULT_GATE_DB): GlideResult | null {
   if (frames.length < 20) return null;
+  frames = frames.map((f) => (f.cents === null ? f : { ...f, cents: foldOctaves(f.cents, interval) }));
   const smooth = smoothDb(frames, 0.1);
   const span = voicedSpan(frames, smooth, floorDb);
   if (!span) return null;
@@ -263,7 +274,7 @@ export function analyseGlide(frames: SupportFrame[], floorDb: number, interval: 
           if (!down || tt <= down.from) return topC;
           return tt >= down.to ? down.c1 : down.c0 + ((down.c1 - down.c0) * (tt - down.from)) / Math.max(1e-6, down.to - down.from);
         };
-  const lost = findLost(frames, a, b, floorDb, expected, true);
+  const lost = findLost(frames, a, b, floorDb, expected, true, gateDb);
   if (lost?.reason === "crack")
     for (const l of [up, down]) if (l) l.jumps = l.jumps.filter((j) => Math.abs(j.t - lost.t) >= 0.3);
 
@@ -362,6 +373,11 @@ export class GlideExercise implements SupportExercise {
     return this.refMidi() + this.interval;
   }
 
+  /** Readings an octave off are tracker errors: shown and judged in the glide's octave. */
+  foldCents(cents: number): number {
+    return foldOctaves(cents, this.interval);
+  }
+
   noteText(): string {
     return `${midiName(this.refMidi())} → ${midiName(this.top)} → ${midiName(this.refMidi())}`;
   }
@@ -448,8 +464,8 @@ export class GlideExercise implements SupportExercise {
     }
   }
 
-  analyse(frames: SupportFrame[], floorDb: number): boolean {
-    this.result = analyseGlide(frames, floorDb, this.interval, this.refMidi());
+  analyse(frames: SupportFrame[], floorDb: number, gateDb: number): boolean {
+    this.result = analyseGlide(frames, floorDb, this.interval, this.refMidi(), gateDb);
     const r = this.result;
     if (!r) return false;
     if (r.up && r.down) {

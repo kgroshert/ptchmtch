@@ -4,7 +4,7 @@ import type { MessaSession } from "./history";
 import { midiName } from "./pitch";
 import type { DrawView, Note, SupportExercise, SupportPrefs } from "./support";
 import { analyseVibrato, type Vibrato } from "./vibrato";
-import { BUMP_DB, findLost, median, smoothDb, voicedSpan, type LostReason, type SupportFrame } from "./support-analysis";
+import { BUMP_DB, DEFAULT_GATE_DB, findLost, median, smoothDb, voicedSpan, type LostReason, type SupportFrame } from "./support-analysis";
 
 export type MessaFrame = SupportFrame;
 
@@ -43,7 +43,7 @@ export interface MessaResult {
 }
 
 
-export function analyseMessa(frames: SupportFrame[], floorDb: number, target: number): MessaResult | null {
+export function analyseMessa(frames: SupportFrame[], floorDb: number, target: number, gateDb = DEFAULT_GATE_DB): MessaResult | null {
   if (frames.length < 20) return null;
   const smooth = smoothDb(frames, 0.1);
   const span0 = voicedSpan(frames, smooth, floorDb);
@@ -116,7 +116,7 @@ export function analyseMessa(frames: SupportFrame[], floorDb: number, target: nu
   const drift = softCents !== null && loudCents !== null ? loudCents - softCents : null;
   const meanCents = pitched.length > 10 ? median(pitched.map((i) => frames[i].cents!)) : null;
 
-  const lost = findLost(frames, a, b, floorDb);
+  const lost = findLost(frames, a, b, floorDb, undefined, false, gateDb);
 
   // A break makes the level jump back up after it: that isn't a surge of its own.
   if (lost?.reason === "break") {
@@ -254,8 +254,8 @@ export class MessaExercise implements SupportExercise {
     }
   }
 
-  analyse(frames: MessaFrame[], floorDb: number): boolean {
-    this.result = analyseMessa(frames, floorDb, this.prefs.length);
+  analyse(frames: MessaFrame[], floorDb: number, gateDb: number): boolean {
+    this.result = analyseMessa(frames, floorDb, this.prefs.length, gateDb);
     const r = this.result;
     if (!r) return false;
     this.lastSoft = Math.max(r.startDb, r.endDb);

@@ -21,10 +21,11 @@ export const BUMP_DB = 3;
 /** A jump in pitch this large from the running median counts as a crack. */
 export const CRACK_CENTS = 80;
 /**
- * The pitch tracker ignores input below its gate (RMS 0.008, about −42 dBFS), so a very soft tone
- * has no pitch on purpose; losing the pitch only counts above this level.
+ * The pitch tracker ignores input below its gate (RMS 0.008, about −42 dBFS, unless the microphone
+ * was calibrated), so a very soft tone has no pitch on purpose; losing the pitch only counts above
+ * the gate plus 3 dB. Analyses take the tracker's gate in dB; this is the default.
  */
-export const PITCH_GATE_DB = 20 * Math.log10(0.008) + 3;
+export const DEFAULT_GATE_DB = 20 * Math.log10(0.008);
 
 export const median = (xs: number[]) => {
   if (!xs.length) return NaN;
@@ -77,7 +78,10 @@ export function findLost(
   expected?: (t: number) => number,
   /** Also ignore cracks and lost pitch that begin at the onset or the release (as breaks always are). */
   edges = false,
+  /** The pitch tracker's gate, dB. */
+  gateDb = DEFAULT_GATE_DB,
 ): { t: number; reason: LostReason } | null {
+  const pitchGateDb = gateDb + 3;
   const from = frames[a].t;
   const to = frames[b].t;
   const inner = (t0: number) => !edges || (t0 > from + 0.3 && t0 < to - 0.4);
@@ -98,7 +102,7 @@ export function findLost(
     }
     gapStart = null;
     if (f.cents === null) {
-      if (f.db < PITCH_GATE_DB) {
+      if (f.db < pitchGateDb) {
         noPitchStart = null;
         continue;
       }

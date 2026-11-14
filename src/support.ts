@@ -28,6 +28,8 @@ export interface SupportHost {
   play(notes: { midi: number | number[]; start: number; dur: number }[], sound: Instrument): { end: number; stop: () => void };
   ensureMic(): Promise<boolean>;
   toleranceCents(): number;
+  /** The pitch tracker's gate (RMS); below it there is no pitch on purpose. */
+  pitchGate(): number;
 }
 
 /** Saved settings, shared by reference with the exercises; the host saves them. */
@@ -70,6 +72,8 @@ export interface SupportExercise {
   readonly unit: [string, string];
   /** The note the frames' cents are measured from. */
   refMidi(): number;
+  /** Corrects a reading as it arrives (e.g. tracker octave errors); optional. */
+  foldCents?(cents: number): number;
   noteText(): string;
   canStep(d: 1 | -1): boolean;
   step(d: 1 | -1): void;
@@ -87,7 +91,8 @@ export interface SupportExercise {
   peakHint(): number | null;
   /** Called as a round starts (a session's first round records its start and context). */
   startRound(): void;
-  analyse(frames: SupportFrame[], floorDb: number): boolean;
+  /** `gateDb`: the pitch tracker's gate, dB. */
+  analyse(frames: SupportFrame[], floorDb: number, gateDb: number): boolean;
   clearResult(): void;
   hasResult(): boolean;
   smoothDb(): number[] | null;
@@ -318,7 +323,8 @@ export class SupportTrainer {
     if (this.phase !== "sing" || s.time < this.singStart) return;
     const t = s.time - this.singStart;
     const db = 20 * Math.log10(Math.max(1e-6, s.level));
-    this.frames.push({ t, db, cents: s.midi === null ? null : (s.midi - this.ex.refMidi()) * 100 });
+    const cents = s.midi === null ? null : (s.midi - this.ex.refMidi()) * 100;
+    this.frames.push({ t, db, cents: cents === null || !this.ex.foldCents ? cents : this.ex.foldCents(cents) });
     if (db > this.floorDb + VOICE_DB) {
       this.voiceStart ??= s.time;
       this.lastVoice = s.time;
@@ -341,7 +347,7 @@ export class SupportTrainer {
   private finish(): void {
     if (this.phase !== "sing") return;
     cancelAnimationFrame(this.raf);
-    this.ex.analyse(this.frames, this.floorDb);
+    this.ex.analyse(this.frames, this.floorDb, 20 * Math.log10(Math.max(1e-6, this.host.pitchGate())));
     this.setPhase("result");
     this.showResult();
     this.showStats();
