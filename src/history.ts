@@ -115,6 +115,30 @@ export const ECHO_KEY = "ptchmtch.echo.sessions";
 export const SYL_KEY = "ptchmtch.syllables.sessions";
 export const MESSA_KEY = "ptchmtch.messa.sessions";
 
+/** A glide session on the Support page (only glides that went up and came back down count). */
+export interface GlideSession {
+  date: number;
+  /** e.g. "C4–E4 · Alto" */
+  context: string;
+  rounds: number;
+  minutes: number;
+  /** Mean RMS distance from an even glide, cents, up and down. */
+  evenUp: number;
+  evenDown: number;
+  /** Mean size of the largest drift per glide, cents. */
+  drift: number;
+  /** Mean variation of the volume around its own level, dB. */
+  volume: number;
+  /** Mean miss of the top note, cents. */
+  topError: number;
+  /** Mean length of a whole glide, seconds. */
+  seconds: number;
+  /** Glides where control gave out. */
+  lost: number;
+}
+
+export const GLIDE_KEY = "ptchmtch.glide.sessions";
+
 export function loadRows<T>(key: string): T[] {
   try {
     const rows = JSON.parse(localStorage.getItem(key) || "[]");
@@ -310,6 +334,29 @@ export const MESSA_VIEW: View<MessaSession> = {
     { label: "Peak off-centre", cell: (r) => pct(r.offCentre) },
     { label: "Pitch soft→loud", cell: (r) => num(r.drift, 0, "¢") },
     { label: "Held", cell: (r) => pct(r.held) },
+    { label: "Lost control", cell: (r) => `${r.lost}/${r.rounds}` },
+  ],
+};
+
+export const GLIDE_VIEW: View<GlideSession> = {
+  empty: "No glide sessions yet. Open Support in the menu bar, pick Glide, and sing a few glides.",
+  metrics: [
+    { label: "Evenness up (lower is smoother)", unit: "¢", value: (r) => r.evenUp, better: "lower" },
+    { label: "Evenness down (lower is smoother)", unit: "¢", value: (r) => r.evenDown, better: "lower" },
+    { label: "Largest drift", unit: "¢", value: (r) => r.drift, better: "lower" },
+    { label: "Volume steadiness (lower is steadier)", unit: " dB", value: (r) => r.volume, better: "lower", digits: 1 },
+    { label: "Top note accuracy", unit: "¢", value: (r) => r.topError, better: "lower" },
+    { label: "Glide length", unit: " s", value: (r) => r.seconds },
+  ],
+  columns: [
+    { label: "When", cell: (r) => fmtDate(r.date) },
+    { label: "Glide · voice", cell: (r) => r.context },
+    { label: "Glides", cell: (r) => `${r.rounds} <small>${num(r.minutes, 0, " min")}</small>` },
+    { label: "Evenness up / down", cell: (r) => `±${num(r.evenUp, 0)} / ±${num(r.evenDown, 0, "¢")}`, strong: true },
+    { label: "Largest drift", cell: (r) => num(r.drift, 0, "¢") },
+    { label: "Volume", cell: (r) => `±${num(r.volume, 1, " dB")}` },
+    { label: "Top", cell: (r) => num(r.topError, 0, "¢") },
+    { label: "Length", cell: (r) => num(r.seconds, 0, " s") },
     { label: "Lost control", cell: (r) => `${r.lost}/${r.rounds}` },
   ],
 };

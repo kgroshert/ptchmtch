@@ -32,6 +32,9 @@ import {
   SYL_VIEW,
   MESSA_KEY,
   MESSA_VIEW,
+  GLIDE_KEY,
+  GLIDE_VIEW,
+  type GlideSession,
   type MessaSession,
   type EchoSession,
   upsertRow,
@@ -815,7 +818,7 @@ function hideToast(): void {
   $("toast").hidden = true;
 }
 
-type HistoryTab = "runs" | "loops" | "notes" | "echo" | "syllables" | "messa";
+type HistoryTab = "runs" | "loops" | "notes" | "echo" | "syllables" | "messa" | "glide";
 let historyTab: HistoryTab = "runs";
 
 function openHistory(): void {
@@ -824,8 +827,8 @@ function openHistory(): void {
   // the Score page. (Only when opening; the tabs then switch freely.)
   if (!$<HTMLDialogElement>("history").open) {
     if (page === "audiation") historyTab = echo.currentMode === "syllables" ? "syllables" : "echo";
-    else if (page === "support") historyTab = "messa";
-    else if (historyTab === "echo" || historyTab === "syllables" || historyTab === "messa") historyTab = "runs";
+    else if (page === "support") historyTab = support.exercise === "glide" ? "glide" : "messa";
+    else if (historyTab === "echo" || historyTab === "syllables" || historyTab === "messa" || historyTab === "glide") historyTab = "runs";
   }
   const dlg = $<HTMLDialogElement>("history");
   for (const b of $("historyTabs").querySelectorAll<HTMLButtonElement>("button"))
@@ -840,6 +843,9 @@ function openHistory(): void {
   } else if (historyTab === "messa") {
     $("historyFor").textContent = "All messa di voce sessions (Support page).";
     renderView<MessaSession>(body, MESSA_KEY, MESSA_VIEW);
+  } else if (historyTab === "glide") {
+    $("historyFor").textContent = "All glide sessions (Support page).";
+    renderView<GlideSession>(body, GLIDE_KEY, GLIDE_VIEW);
   } else if (historyTab === "syllables") {
     $("historyFor").textContent = "All Syllables sessions: solfège read and sung, without hearing it first.";
     renderView<EchoSession>(body, SYL_KEY, SYL_VIEW);
@@ -856,6 +862,7 @@ function openHistory(): void {
     loops: "A loop session is recorded when you stop after at least three passes of a looped selection. Accuracy is how far the notes were off on average in your best pass (passes with fewer than 80% of the notes sung don't count). Spread shows how differently each note came out from pass to pass (precision).",
     notes: "A session is recorded for each note you practise in the trainer for at least 2 seconds of singing. Vibrato is measured on the longest uninterrupted stretch.",
     messa: "A session is recorded when you stop, change the note or length, or leave the page, if you sang at least one swell. Range: the loudest point above the softer of the two soft ends. Evenness: how far the volume strayed from a steady rise and fall. Volume is relative to the microphone, so compare sessions sung at the same distance.",
+    glide: "A session is recorded when you stop, switch exercise, change the voice, glide or interval, or leave the page, if you sang at least one glide up and back down. Evenness: how far the pitch strayed from a straight, even glide between where you started, turned and landed, in cents. Speed isn't judged: the pace is yours. Volume steadiness: how much the volume varied around its own level.",
     syllables: "A session is recorded as for Echo, in the Syllables mode. Levels follow the Kodály order of tone sets (sol mi, then la, do, re, low la and sol, fa, ti), so they aren't the same as Echo's.",
     echo: "A session is recorded when you stop the Echo trainer, close it, change key or voice, or leave the page, if you sang at least one round. Only the first try of each phrase counts. Right: every note within 50 cents; in tune: every note within your tolerance.",
   }[historyTab];
@@ -901,6 +908,7 @@ const support = new SupportTrainer($("support"), {
   toleranceCents: () => settings().toleranceCents,
 });
 support.onSession = (s) => addRow(MESSA_KEY, s);
+support.onGlideSession = (s) => addRow(GLIDE_KEY, s);
 window.addEventListener("pagehide", () => support.endSession());
 // A session still running when the page goes away is kept too.
 window.addEventListener("pagehide", () => echo.endSession());

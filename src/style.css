@@ -1580,3 +1580,12 @@ dialog.detect {
   content: "!";
   color: #e08a2a;
 }
+
+.mv-findings li.info {
+  padding-left: 10px;
+  color: var(--muted);
+}
+
+.support [data-for][hidden] {
+  display: none;
+}
