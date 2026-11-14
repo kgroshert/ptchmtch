@@ -12,6 +12,15 @@ export interface SupportFrame {
   cents: number | null;
 }
 
+/**
+ * Moves a reading that is a whole octave (or more) off back to within half an octave of `centre`:
+ * on the Support page that can only be a tracker octave error (common on phones for low notes,
+ * where the fundamental is weak), since each exercise stays within a fifth. Idempotent.
+ */
+export function foldOctave(cents: number, centre: number): number {
+  return cents - 1200 * Math.round((cents - centre) / 1200);
+}
+
 export type LostReason = "break" | "crack" | "no pitch";
 
 /** dB above the noise floor that counts as voice. */

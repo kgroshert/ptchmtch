@@ -4,7 +4,7 @@ import type { MessaSession } from "./history";
 import { midiName } from "./pitch";
 import type { DrawView, Note, SupportExercise, SupportPrefs } from "./support";
 import { analyseVibrato, type Vibrato } from "./vibrato";
-import { BUMP_DB, DEFAULT_GATE_DB, findLost, median, smoothDb, voicedSpan, type LostReason, type SupportFrame } from "./support-analysis";
+import { BUMP_DB, DEFAULT_GATE_DB, findLost, foldOctave, median, smoothDb, voicedSpan, type LostReason, type SupportFrame } from "./support-analysis";
 
 export type MessaFrame = SupportFrame;
 
@@ -45,6 +45,7 @@ export interface MessaResult {
 
 export function analyseMessa(frames: SupportFrame[], floorDb: number, target: number, gateDb = DEFAULT_GATE_DB): MessaResult | null {
   if (frames.length < 20) return null;
+  frames = frames.map((f) => (f.cents === null ? f : { ...f, cents: foldOctave(f.cents, 0) }));
   const smooth = smoothDb(frames, 0.1);
   const span0 = voicedSpan(frames, smooth, floorDb);
   if (!span0) return null;
@@ -188,6 +189,11 @@ export class MessaExercise implements SupportExercise {
   refMidi(): number {
     const v = this.range;
     return Math.round((v.low + v.high) / 2) + this.prefs.offset;
+  }
+
+  /** Readings an octave off are tracker errors: shown and judged at the note's octave. */
+  foldCents(cents: number): number {
+    return foldOctave(cents, 0);
   }
 
   noteText(): string {

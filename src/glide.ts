@@ -9,7 +9,7 @@ import type { GlideSession } from "./history";
 import { midiName } from "./pitch";
 import type { DrawView, Note, SupportExercise, SupportPrefs } from "./support";
 import { analyseVibrato, type Vibrato } from "./vibrato";
-import { BUMP_DB, DEFAULT_GATE_DB, findLost, median, smoothDb, voicedSpan, type LostReason, type SupportFrame } from "./support-analysis";
+import { BUMP_DB, DEFAULT_GATE_DB, findLost, foldOctave, median, smoothDb, voicedSpan, type LostReason, type SupportFrame } from "./support-analysis";
 
 /** A drift from the even line larger than this is flagged, cents. */
 export const DRIFT_CENTS = 30;
@@ -112,14 +112,9 @@ function smoothPitch(frames: SupportFrame[], a: number, b: number): (number | nu
   return pass(pass(first));
 }
 
-/**
- * Moves a reading that is a whole octave off back into the glide: anything more than half an
- * octave from the glide's middle must be a tracker octave error (common on phones for low notes,
- * where the fundamental is weak), since the glide only spans a third or a fifth. Idempotent.
- */
+/** Octave errors folded back into the glide (around its middle); see `foldOctave`. */
 export function foldOctaves(cents: number, interval: number): number {
-  const mid = (interval * 100) / 2;
-  return cents - 1200 * Math.round((cents - mid) / 1200);
+  return foldOctave(cents, (interval * 100) / 2);
 }
 
 /**

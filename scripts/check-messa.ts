@@ -3,7 +3,7 @@ import { analyseMessa, type MessaFrame } from "../src/messa";
 import { between, done, expect, rng } from "./check-util";
 
 const GATE = 20 * Math.log10(0.008);
-type Opts = { peakAt?: number; dipAt?: number; drift?: number; breakAt?: number; crackAt?: number; lostAt?: number; vib?: boolean };
+type Opts = { octErrors?: boolean; peakAt?: number; dipAt?: number; drift?: number; breakAt?: number; crackAt?: number; lostAt?: number; vib?: boolean };
 
 function make(opts: Opts = {}, seed = 1): MessaFrame[] {
   const rand = rng(seed);
@@ -19,6 +19,8 @@ function make(opts: Opts = {}, seed = 1): MessaFrame[] {
       if (opts.breakAt && t > opts.breakAt && t < opts.breakAt + 0.3) db = -70;
       cents = (opts.drift ?? 0) * q + (rand() - 0.5) * 6 + (opts.vib ? 40 * Math.sin(2 * Math.PI * 5.5 * t) : 0);
       if (opts.crackAt && t > opts.crackAt && t < opts.crackAt + 0.3) cents += 250;
+      // A phone mic: the tracker jumps an octave up in bursts of 0.1–0.4 s.
+      if (opts.octErrors && Math.sin(t * 7.3) + Math.sin(t * 2.9) > 0.6) cents += 1200;
       if (opts.lostAt && t > opts.lostAt && t < opts.lostAt + 0.5) cents = null;
       if (db < GATE) cents = null;
     }
@@ -70,6 +72,12 @@ for (let s = 0; s < 5; s++) {
   const fade = make({}, 50 + s).map((f) => (f.t >= 0.5 && f.t <= 10.5 ? { ...f, db: f.db + (f.t > 9.5 ? -(f.t - 9.5) * 12 : 0) + (rand() - 0.5) * 6 } : f));
   const r = run(fade.map((f) => ({ ...f, db: f.db + (rand() - 0.5) * 2 })));
   expect(`fade-out ${s}: not lost`, r.lost === null, JSON.stringify(r.lost));
+}
+// Octave errors from the tracker are folded back to the note: no crack, pitch steady.
+{
+  const r = run(make({ octErrors: true }));
+  expect("octave errors: not lost", r.lost === null, JSON.stringify(r.lost));
+  expect("octave errors: pitch steady", Math.abs(r.drift ?? 0) < 10 && Math.abs(r.meanCents ?? 0) < 10, `drift ${r.drift} mean ${r.meanCents}`);
 }
 // The no-pitch rule follows the microphone threshold: a quiet phone mic calibrated to −62 dB.
 {

@@ -89,7 +89,7 @@ The **Support** page trains breath support with messa di voce: one sustained not
   - whether you held the full length;
   - **vibrato** or wobble in the loud part.
 
-Volume is relative: it depends on the microphone and your distance to it, so keep the same distance to compare swells and days. Very soft singing (below the microphone threshold, −42 dB of full scale unless calibrated) is too quiet for the pitch tracker, so the pitch line starts a little after the volume line, which is normal. Each session (until you stop, change the note or length, or leave the page) goes into **History**.
+Pitch readings a whole octave off the note are treated as detection errors (phone microphones often hear low notes an octave too high) and moved back to the note's octave, on the graph and in the analysis, so they don't count as cracks. Volume is relative: it depends on the microphone and your distance to it, so keep the same distance to compare swells and days. Very soft singing (below the microphone threshold, −42 dB of full scale unless calibrated) is too quiet for the pitch tracker, so the pitch line starts a little after the volume line, which is normal. Each session (until you stop, change the note or length, or leave the page) goes into **History**.
 
 ### Glides (Support)
 
