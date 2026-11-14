@@ -169,9 +169,9 @@ export class SupportTrainer {
       b.addEventListener("click", () => this.switchTo(b.dataset.ex === "glide" ? "glide" : "messa"));
     this.$("mvDown").addEventListener("click", () => this.step(-1));
     this.$("mvUp").addEventListener("click", () => this.step(1));
-    this.$("mvStart").addEventListener("click", () => (this.phase === "idle" ? this.round() : this.stop()));
+    // One button: Start, Stop while a round runs, Again once it has a result.
+    this.$("mvStart").addEventListener("click", () => (this.phase === "idle" || this.phase === "result" ? this.round() : this.stop()));
     this.$("mvDone").addEventListener("click", () => this.finish());
-    this.$("mvAgain").addEventListener("click", () => this.round());
     this.$("mvHear").addEventListener("click", () => this.playNotes(this.ex.hearNotes()));
     document.addEventListener("keydown", (e) => {
       if (!this.isOpen || (e.target as HTMLElement).closest("select, button, input, textarea, dialog")) return;
@@ -359,7 +359,6 @@ export class SupportTrainer {
     this.clearTimers();
     this.endSession();
     this.setPhase(this.ex.hasResult() ? "result" : "idle");
-    this.$("mvStart").textContent = "Start";
     this.draw();
   }
 
@@ -394,8 +393,7 @@ export class SupportTrainer {
     this.$("mvHint").hidden = !hint[p];
     this.$("mvDone").hidden = p !== "sing";
     this.$("mvResult").hidden = p !== "result" || !this.ex.hasResult();
-    this.$("mvAgain").hidden = p !== "result";
-    if (p === "idle") this.$("mvStart").textContent = "Start";
+    this.$("mvStart").textContent = p === "idle" ? "Start" : p === "result" ? "Again" : "Stop";
   }
 
   private showStats(): void {

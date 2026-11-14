@@ -56,12 +56,14 @@ export interface GlideResult {
   to: number;
   /** First settled pitch vs the low note, cents. */
   startCents: number;
-  /** Highest smoothed pitch minus the top note: + overshoot, − undershoot. */
+  /** The top (the plateau's level if you held it, else the highest point) minus the top note: + over, − under. */
   topCents: number;
   /** Landing vs the low note; null when there was no way down. */
   endCents: number | null;
   /** Set when the pitch stayed at the top at least TOP_HOLD_SECONDS. */
   hold: { from: number; to: number } | null;
+  /** The fitted top: where the way up ends and the way down begins, and its level (for drawing). */
+  top: { from: number; to: number; cents: number };
   /** Null when there was no glide (the top was under half the interval). */
   up: GlideLeg | null;
   /** Null when it never came down by half the interval. */
@@ -120,6 +122,63 @@ export function foldOctaves(cents: number, interval: number): number {
   return cents - 1200 * Math.round((cents - mid) / 1200);
 }
 
+/**
+ * Fits the top of a glide as a line up (from `a`), a level stretch [hl, hr] and a line down (to
+ * `b`), choosing hl ≤ p ≤ hr (p = the highest point) with the least squared error. Only frames
+ * near the top are candidates. Sums are prefix sums, so each candidate costs O(1).
+ */
+function fitTop(frames: SupportFrame[], sc: (number | null)[], a: number, p: number, b: number, topC: number): [number, number] {
+  const n = sc.length;
+  const N = new Float64Array(n + 1), T = new Float64Array(n + 1), C = new Float64Array(n + 1);
+  const TT = new Float64Array(n + 1), CC = new Float64Array(n + 1), TC = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) {
+    const c = sc[i];
+    const t = frames[i].t;
+    const on = c !== null && i >= a && i <= b ? 1 : 0;
+    N[i + 1] = N[i] + on;
+    T[i + 1] = T[i] + on * t;
+    C[i + 1] = C[i] + on * (c ?? 0);
+    TT[i + 1] = TT[i] + on * t * t;
+    CC[i + 1] = CC[i] + on * (c ?? 0) ** 2;
+    TC[i + 1] = TC[i] + on * t * (c ?? 0);
+  }
+  const sum = (A: Float64Array, i0: number, i1: number) => A[i1 + 1] - A[i0];
+  const lineErr = (i0: number, i1: number) => {
+    const k = sum(N, i0, i1);
+    if (k < 2 || sc[i0] === null || sc[i1] === null) return 0;
+    const t0 = frames[i0].t, c0 = sc[i0]!, dt = frames[i1].t - t0;
+    const st = sum(T, i0, i1), scs = sum(C, i0, i1);
+    const su2 = sum(TT, i0, i1) - 2 * t0 * st + k * t0 * t0;
+    const sv2 = sum(CC, i0, i1) - 2 * c0 * scs + k * c0 * c0;
+    const suv = sum(TC, i0, i1) - c0 * st - t0 * scs + k * t0 * c0;
+    if (dt <= 0) return sv2;
+    const slope = (sc[i1]! - c0) / dt;
+    return sv2 - 2 * slope * suv + slope * slope * su2;
+  };
+  const flatErr = (i0: number, i1: number) => {
+    const k = sum(N, i0, i1);
+    return k ? sum(CC, i0, i1) - sum(C, i0, i1) ** 2 / k : 0;
+  };
+  // Candidates: frames with a pitch within 80¢ of the highest point, at most ~150 per side.
+  const near = (i: number) => sc[i] !== null && topC - sc[i]! <= 80;
+  const left: number[] = [];
+  for (let i = p; i >= a && near(i); i--) left.push(i);
+  const right: number[] = [];
+  for (let i = p; i <= b && near(i); i++) right.push(i);
+  const thin = (xs: number[]) => xs.filter((_, k) => k % Math.max(1, Math.ceil(xs.length / 150)) === 0);
+  let best: [number, number] = [p, p];
+  let bestErr = Infinity;
+  for (const hl of thin(left))
+    for (const hr of thin(right)) {
+      const err = lineErr(a, hl) + flatErr(hl, hr) + lineErr(hr, b);
+      if (err < bestErr) {
+        bestErr = err;
+        best = [hl, hr];
+      }
+    }
+  return best;
+}
+
 export function analyseGlide(frames: SupportFrame[], floorDb: number, interval: number, lowMidi: number, gateDb = DEFAULT_GATE_DB): GlideResult | null {
   if (frames.length < 20) return null;
   frames = frames.map((f) => (f.cents === null ? f : { ...f, cents: foldOctaves(f.cents, interval) }));
@@ -159,22 +218,6 @@ export function analyseGlide(frames: SupportFrame[], floorDb: number, interval: 
   const startCents = sc[s]!;
   const rose = topC - startCents >= full / 2;
 
-  // Where the pitch is barely moving: settling on the first note, a pause at the top, landing.
-  // Measured by speed (not a pitch band), so slowing into the turn doesn't count as a pause.
-  const avgUp = Math.max(1, (topC - startCents) / Math.max(0.5, t(p) - t(s)));
-  const slow = (i: number) => {
-    let lo = i;
-    let hi = i;
-    while (lo > s && t(i) - t(lo) < PITCH_SMOOTH_SECONDS / 2) lo--;
-    while (hi < e && t(hi) - t(i) < PITCH_SMOOTH_SECONDS / 2) hi++;
-    if (sc[lo] === null || sc[hi] === null || hi === lo) return true;
-    return Math.abs(sc[hi]! - sc[lo]!) / (t(hi) - t(lo)) < STALL_FRACTION * avgUp;
-  };
-  let hl = p;
-  let hr = p;
-  while (hl > s && slow(hl - 1)) hl--;
-  while (hr < e && slow(hr + 1)) hr++;
-  const held = t(hr) - t(hl) >= TOP_HOLD_SECONDS;
   // Settling on the first note and landing on the last: the leg starts where the pitch leaves the
   // first note (by more than 30¢) and ends where it arrives at the last. A pitch band works here,
   // where speed doesn't: the smoothing is one-sided at the ends of the judged span.
@@ -189,10 +232,18 @@ export function analyseGlide(frames: SupportFrame[], floorDb: number, interval: 
   while (s1 < p && (sc[s1 + 1] === null || Math.abs(sc[s1 + 1]! - startRef) <= 30)) s1++;
   let e0 = e;
   while (e0 > p && (sc[e0 - 1] === null || Math.abs(sc[e0 - 1]! - endRef) <= 30)) e0--;
-  const upStart = s1 < (held ? hl : p) ? s1 : s;
-  const upEnd = held ? hl : p;
-  const downStart = held ? hr : p;
-  const downEnd = e0 > downStart ? e0 : e;
+  const upStart = s1 < p ? s1 : s;
+  const downEnd = e0 > p ? e0 : e;
+
+  // The top: up, an optional plateau, down. Holding the top note a while is fine, so the turn is
+  // fitted as three pieces (a line up, a level stretch, a line down) with the least squared error;
+  // a sharp turn comes out as a plateau of (almost) no length.
+  const [hl, hr] = fitTop(frames, sc, upStart, p, downEnd, topC);
+  const plateau = t(hr) - t(hl) >= 0.3;
+  const topLevel = plateau ? median(sc.slice(hl, hr + 1).filter((c): c is number => c !== null)) : topC;
+  const held = t(hr) - t(hl) >= TOP_HOLD_SECONDS;
+  const upEnd = hl;
+  const downStart = hr;
   let lowest = topC;
   for (let i = downStart; i <= e; i++) if (sc[i] !== null) lowest = Math.min(lowest, sc[i]!);
   const cameDown = rose && topC - lowest >= full / 2;
@@ -319,9 +370,10 @@ export function analyseGlide(frames: SupportFrame[], floorDb: number, interval: 
     from,
     to,
     startCents,
-    topCents: topC - full,
+    topCents: topLevel - full,
     endCents: down ? median(landing) : null,
     hold: held ? { from: t(hl), to: t(hr) } : null,
+    top: { from: t(hl), to: t(hr), cents: topLevel },
     up,
     down,
     levelDb,
@@ -411,7 +463,7 @@ export class GlideExercise implements SupportExercise {
 
   idleHint(): string {
     const lo = midiName(this.refMidi());
-    return `You'll hear the low and the top note, then breathe in while the room's noise is measured. Then start on ${lo}, glide slowly and evenly up to ${midiName(this.top)} and back down to ${lo} without stopping, at your own pace (around 10 s each way). Keep the volume level.`;
+    return `You'll hear the low and the top note, then breathe in while the room's noise is measured. Then start on ${lo}, glide slowly and evenly up to ${midiName(this.top)}, hold it if you like, and glide back down to ${lo}, at your own pace (around 10 s each way). Keep the volume level.`;
   }
 
   singHint(): string {
@@ -533,6 +585,13 @@ export class GlideExercise implements SupportExercise {
       g.beginPath();
       g.moveTo(x(l.from), yP(l.c0));
       g.lineTo(x(l.to), yP(l.c1));
+      g.stroke();
+    }
+    // A held top note: the level stretch between the way up and the way down.
+    if (r.up && r.down && r.top.to > r.top.from) {
+      g.beginPath();
+      g.moveTo(x(r.top.from), yP(r.top.cents));
+      g.lineTo(x(r.top.to), yP(r.top.cents));
       g.stroke();
     }
     g.restore();

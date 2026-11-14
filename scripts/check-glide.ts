@@ -12,7 +12,7 @@ interface Opts {
   overshoot?: number; endCents?: number; vib?: boolean; roundTurn?: boolean; scoop?: boolean;
   volPerCent?: number; slip?: number; upOnly?: boolean; flat?: boolean; hold?: number;
   vibAmp?: number; vibHz?: number; settle?: number; land?: number; slipDur?: number;
-  crackAt?: number; octErrors?: boolean; onsetOct?: boolean; breathy?: boolean; falloff?: boolean; scoopCents?: number; scoopDur?: number;
+  holdWander?: number; holdCreep?: number; holdOffset?: number; crackAt?: number; octErrors?: boolean; onsetOct?: boolean; breathy?: boolean; falloff?: boolean; scoopCents?: number; scoopDur?: number;
 }
 
 function glide(o: Opts = {}): SupportFrame[] {
@@ -28,8 +28,9 @@ function glide(o: Opts = {}): SupportFrame[] {
     if (t <= start) return 0;
     if (t <= turn) return (top * (t - start)) / up;
     if (t >= downAt + down) return endC;
-    if (t <= downAt) return top;
-    return top + ((endC - top) * (t - downAt)) / down;
+    if (t <= downAt) return top + (o.holdOffset ?? 0) + (o.holdCreep ?? 0) * ((t - turn) / Math.max(hold, 1e-6)) + (o.holdWander ?? 0) * Math.sin(2 * Math.PI * 0.5 * (t - turn));
+    const from = top + (o.holdOffset ?? 0) + (o.holdCreep ?? 0) * (hold ? 1 : 0);
+    return from + ((endC - from) * (t - downAt)) / down;
   };
   const out: SupportFrame[] = [];
   for (let t = 0; t < end + 1.2; t += 0.015) {
@@ -71,7 +72,7 @@ const run = (o: Opts = {}): GlideResult | null => analyseGlide(glide(o), -70, o.
 const show = (r: GlideResult | null) =>
   r ? `up ±${r.up?.rms.toFixed(1)} worst ${r.up?.worst?.dev.toFixed(0)} st ${r.up?.stalls.length} j ${r.up?.jumps.length} | down ±${r.down?.rms.toFixed(1)} worst ${r.down?.worst?.dev.toFixed(0)} st ${r.down?.stalls.length} j ${r.down?.jumps.length} | bumps ${r.bumps.length} lost ${r.lost?.reason ?? "-"} top ${r.topCents.toFixed(0)} end ${r.endCents?.toFixed(0)}` : "null";
 
-function clean(name: string, o: Opts) {
+function clean(name: string, o: Opts, holds = false) {
   const r = run(o);
   const ok = !!r && !!r.up && !!r.down;
   expect(`${name}: both legs`, ok, show(r));
@@ -82,7 +83,7 @@ function clean(name: string, o: Opts) {
   expect(`${name}: no stalls/jumps`, !r.up!.stalls.length && !r.down!.stalls.length && !r.up!.jumps.length && !r.down!.jumps.length, show(r));
   expect(`${name}: no volume bumps`, r.bumps.length === 0, JSON.stringify(r.bumps));
   expect(`${name}: not lost`, r.lost === null, JSON.stringify(r.lost));
-  expect(`${name}: no pause at the top`, r.hold === null, JSON.stringify(r.hold));
+  if (!holds) expect(`${name}: no pause at the top`, r.hold === null, JSON.stringify(r.hold));
   return r;
 }
 
@@ -192,6 +193,26 @@ clean("scoop −200¢ over 0.4 s", { scoopCents: -200, scoopDur: 0.4, seed: 45 }
 clean("scoop −300¢ over 0.5 s", { scoopCents: -300, scoopDur: 0.5, seed: 46 });
 clean("octave errors on the way down", { octErrors: true, seed: 61 });
 clean("octave errors, fifth", { octErrors: true, interval: 7, seed: 62 });
+
+// A plateau at the top is fine: hold the top note a while, then come down.
+{
+  const r = clean("fast up, held top 4 s", { up: 2.5, hold: 4, down: 4, vib: true, vibAmp: 30, holdCreep: 15, seed: 71 }, true);
+  expect("fast up, held top 4 s: hold found", !!r?.hold && between(r.hold.to - r.hold.from, 3.4, 4.6), JSON.stringify(r?.hold));
+}
+{
+  const r = clean("slow up, wandering hold 2 s", { up: 10, hold: 2, down: 10, holdWander: 15, seed: 72 }, true);
+  expect("slow up, wandering hold 2 s: hold found", !!r?.hold && between(r.hold.to - r.hold.from, 1.5, 2.5), JSON.stringify(r?.hold));
+}
+{
+  const r = run({ hold: 0.6, seed: 73 });
+  const ok = !!r?.up && !!r.down && Math.abs(r.up.worst?.dev ?? 0) <= DRIFT_CENTS && Math.abs(r.down.worst?.dev ?? 0) <= DRIFT_CENTS && r.up.rms < 15 && r.down.rms < 15;
+  expect("short pause 0.6 s: legs even", ok, show(r));
+  expect("short pause 0.6 s: not reported", r?.hold === null, JSON.stringify(r?.hold));
+}
+{
+  const r = run({ hold: 3, holdOffset: -20, seed: 74 });
+  expect("held top a little flat: top −30…−10", between(r?.topCents, -30, -10), `${r?.topCents}`);
+}
 
 // The no-pitch rule follows the microphone threshold: a quiet phone mic calibrated to −65 dB.
 {

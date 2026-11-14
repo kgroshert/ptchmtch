@@ -173,7 +173,7 @@
             <button data-ex="glide" title="Glide slowly up a third or fifth and back down, evenly">Glide</button>
           </div>
           <button id="mvHear" class="btn ghost" title="Play the note(s)">Hear</button>
-          <button id="mvStart" class="btn primary" title="Start or stop (Enter)">Start</button>
+          <button id="mvStart" class="btn primary" title="Start, stop, or go again (Enter)">Start</button>
         </div>
         <div class="trainer-detect echo-settings">
           <label>Voice <select id="mvVoice"></select></label>
@@ -196,9 +196,6 @@
           <div id="mvResult" class="echo-result" hidden>
             <div id="mvResultBody"></div>
           </div>
-          <div class="echo-actions">
-            <button id="mvAgain" class="btn primary" title="Another swell (Enter)" hidden>Again</button>
-          </div>
         </div>
         <p id="mvStats" class="muted"></p>
         <p class="note">
@@ -207,8 +204,8 @@
           straight in dB up to the middle and back, scaled to your last swell. Very soft singing (below the microphone threshold in Settings) is
           too quiet for the pitch line, which is normal at the soft ends.</span>
           <span data-for="glide">Pitch is shown from the low note, with the notes in between as landmarks. The pace is
-          yours: evenness is judged against straight lines between where you started, turned and landed (drawn dashed
-          after each glide), not against a clock. Keep the volume level the whole way; it is measured relative to the
+          yours: evenness is judged against straight lines between where you started, reached the top, left it and
+          landed (drawn dashed after each glide; holding the top a while is fine), not against a clock. Keep the volume level the whole way; it is measured relative to the
           room's quiet, so keep the same distance to the microphone.</span>
         </p>
       </div>
