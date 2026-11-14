@@ -140,6 +140,15 @@ body {
   .menubar .meter {
     display: none;
   }
+  /* The live note keeps one line and a fixed width, so the bar doesn't jump while you sing. */
+  .menubar .readout,
+  #live {
+    flex: none;
+  }
+  #live {
+    width: 4.6em;
+    font-size: 12px;
+  }
 }
 
 /* ---- score toolbar ---- */
@@ -244,6 +253,10 @@ body {
   gap: 8px;
   min-width: 140px;
   font-variant-numeric: tabular-nums;
+}
+
+#live {
+  white-space: nowrap;
 }
 
 .meter {
