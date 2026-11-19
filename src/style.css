@@ -1602,3 +1602,12 @@ dialog.detect {
 .support [data-for][hidden] {
   display: none;
 }
+
+.echo-chord {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+.echo-chord b {
+  color: var(--fg);
+}

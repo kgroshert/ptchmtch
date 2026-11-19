@@ -13,7 +13,7 @@ Open http://localhost:5173 in Chrome, Edge, Firefox or Safari. The browser only 
 
 ## Using it
 
-The menu bar has three pages, **Score** (singing from a score: everything below), **Audiation** (the Echo trainer, with its Syllables mode) and **Support** (messa di voce and glides), plus **History** and **Settings**, which open over any page, and the **Microphone** toggle with a live level and pitch. The app reopens on the page you used last. History opens on the tab that fits the page: Echo or Syllables on Audiation, Messa di voce or Glides on Support (whichever exercise is open), the current score's run-throughs on Score.
+The menu bar has three pages, **Score** (singing from a score: everything below), **Audiation** (the Echo trainer, with its Syllables and Chords modes) and **Support** (messa di voce and glides), plus **History** and **Settings**, which open over any page, and the **Microphone** toggle with a live level and pitch. The app reopens on the page you used last. History opens on the tab that fits the page: Echo, Syllables or Chords on Audiation, Messa di voce or Glides on Support (whichever exercise is open), the current score's run-throughs on Score.
 
 - **Open score…** (or drag a file onto the score area) loads `.musicxml`, `.xml` or compressed `.mxl`. **Practice scores ▾** generates an exercise in any key, written out for soprano, alto, tenor, baritone (A2–E4, between tenor and bass) and bass (each in the comfortable middle of its range) plus piano. Choose your voice under **Your part**; the app remembers it for the next exercise:
   - *Scales*: major, natural minor, harmonic minor and chromatic, one octave up, a half rest, and back down.
@@ -72,6 +72,21 @@ Its levels follow the Kodály order of tone sets: sol mi; sol mi la; do mi sol l
 
 The **note map** on the left is a bar from red through yellow to green for each pitch in your range: how well that note has gone over its last 20 or so tries (1 in tune, falling to ½ at 50 cents off, 0 for a wrong or missed note). It counts first tries only, since a repeated phrase has been heard more often; notes tried only a few times are faint. Hover for the numbers; **Reset** clears it.
 
+### Chords (Audiation)
+
+Switch the Audiation page to **Chords** for general ear training: a chord (or two notes at once) sounds on the piano and stops; keep it in mind, then sing its notes one after another, as asked. **Hear again** plays it once more (singing then starts over after it). The prompt only says what to sing ("bottom to top", "the top note"), never which notes.
+
+| Level | You hear | You sing |
+|---|---|---|
+| 1 | Interval: third, fifth or octave | low note, then high |
+| 2 | Any interval | low note, then high |
+| 3 | Major or minor chord, root position | bottom to top |
+| 4 | Major or minor chord | one voice: the bottom, top or middle note |
+| 5 | Inversions (third or fifth at the bottom) | bottom to top |
+| 6 | Seventh chords | bottom to top |
+
+**Chords: on their own** plays any chord at any pitch; **in a key** plays the key's cadence first, then chords from the key: I, IV and V (minor: i, iv and V with the raised *si*), from level 5 all major and minor chords of the key, at level 6 V7, ii7, Imaj7 and IVmaj7 (minor: V7, iv7, IIImaj7, VImaj7). Every chord lies within your voice's range. The result names the chord and its notes (e.g. "F major · F – A – C"), in a key also its step and syllables ("IV · fa – la – do"); then the chord plays again, followed by its notes one after another. Octaves count in Chords, even with *Ignore octave* on. Levels, repeats, wobble and slide checks and the note map work as in Echo.
+
 ### Messa di voce (Support)
 
 The **Support** page trains breath support with messa di voce: one sustained note, starting softly, swelling evenly to your loudest in the middle and fading evenly back to soft, all on the same pitch.
@@ -127,12 +142,13 @@ When you loop a section, each note's pitch is compared across passes. **Precisio
 
 ### History
 
-**History** has seven tabs. Each one has a chart where you can pick the metric, plus a table; the bin icon at the end of a row deletes that entry (e.g. a test). Charts with a typical healthy range show it as a shaded band.
+**History** has eight tabs. Each one has a chart where you can pick the metric, plus a table; the bin icon at the end of a row deletes that entry (e.g. a test). Charts with a typical healthy range show it as a shaded band.
 
 - **Run-throughs**: each time you sing the whole piece to the end with the microphone on. Metrics: score (0–100), share in tune (by note length), mean deviation, clean onsets, vibrato rate, width and regularity, and the share of notes with a wobble. A message after each run compares it with the last one.
 - **Loop practice**: recorded when you stop after at least three passes of a loop. Metrics: accuracy of your best pass (average deviation; passes with fewer than 80% of the notes sung don't count) and spread between passes (precision). The message compares it with your last session on the same bars.
 - **Long notes**: every note practised in the trainer for at least 2 seconds of singing, across all pieces. Metrics: share in tune, longest hold, mean deviation and vibrato.
 - **Syllables**: the same, for the Syllables mode, on its own ladder of 9 levels.
+- **Chords**: the same, for the Chords mode, on its own ladder of 6 levels.
 - **Messa di voce**: each Support session: mean and best dynamic range, evenness, how far the peak was off-centre, the pitch change from soft to loud, the share of the length held, and how many swells lost control.
 - **Glides**: each glide session: evenness up and down, the largest drift, volume steadiness, how far the top note was missed, and the length of a glide (only glides that went up and came back down count).
 - **Echo**: each Echo trainer session with at least one round, saved when you stop, close the trainer, change key or voice, or leave the page. Counts first tries only. Metrics: share of phrases right (every note within 50 cents) and in tune, highest level, mean deviation and landing time of the right notes, and how often your own rating matched.

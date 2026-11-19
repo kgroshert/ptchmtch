@@ -9,6 +9,7 @@ import { INSTRUMENTS, toInstrument, type Instrument } from "./player";
 import type { EchoSession } from "./history";
 import { midiName, type PitchSample } from "./pitch";
 import { analyseVibrato } from "./vibrato";
+import { CHORD_LEVELS, chordRound, describeChordLevel, spelledName, type ChordContext, type ChordRound } from "./chords";
 
 // --- levels and phrases ----------------------------------------------------
 
@@ -372,7 +373,7 @@ function impressionOf(notes: SungNote[], tol: number): Impression {
 type Phase = "idle" | "key" | "listen" | "hold" | "read" | "sing" | "rate" | "result";
 
 /** Echo: hear a phrase and sing it back. Syllables: read solfège syllables and sing them, unheard. */
-export type TrainMode = "echo" | "syllables";
+export type TrainMode = "echo" | "syllables" | "chords";
 
 export type Help = "learn" | "hint" | "test";
 const HELP_LABEL: Record<Help, string> = { learn: "Learn", hint: "Hint", test: "Test" };
@@ -409,6 +410,9 @@ interface EchoPrefs extends LevelState {
   help?: Help;
   /** The Syllables mode's level (Echo's is on the prefs themselves). */
   syl?: LevelState;
+  /** The Chords mode's level, and whether its chords come on their own or in the key. */
+  chords?: LevelState;
+  chordContext?: ChordContext;
   sound: Instrument;
   selfRate: boolean;
   autoNext: boolean;
@@ -475,6 +479,10 @@ export class EchoTrainer {
   private stopSound: (() => void) | null = null;
   private tonic = 60;
   private degs: number[] = [];
+  /** Chords mode: the current round's chord. */
+  private chord: ChordRound | null = null;
+  /** Chords: the chord of this round has been played and its answer is still to come (Hear again allowed). */
+  private awaiting = false;
   private targets: number[] = [];
   private frames: { time: number; midi: number | null }[] = [];
   private singStart = 0;
@@ -531,10 +539,20 @@ export class EchoTrainer {
       this.$("ecHelpWrap").hidden = this.mode !== "syllables";
       this.$<HTMLSelectElement>("ecHelp").value = this.help;
       for (const b of this.dlg.querySelectorAll<HTMLButtonElement>("#ecMode button")) b.classList.toggle("on", b.dataset.mode === this.mode);
-      this.$("ecTitle").textContent = this.mode === "syllables" ? "Sing the syllables" : "Echo";
+      this.$("ecTitle").textContent = this.mode === "chords" ? "Chords" : this.mode === "syllables" ? "Sing the syllables" : "Echo";
       if (this.phase === "idle")
         this.$("ecContext").textContent =
-          this.mode === "syllables" ? "Read solfège syllables, hear them in your head, sing them" : "Hear a short phrase, keep it in mind, sing it back";
+          this.mode === "chords"
+            ? "Hear a chord, keep it in mind, sing its notes"
+            : this.mode === "syllables"
+              ? "Read solfège syllables, hear them in your head, sing them"
+              : "Hear a short phrase, keep it in mind, sing it back";
+      this.$("ecChordCtxWrap").hidden = this.mode !== "chords";
+      this.$<HTMLSelectElement>("ecChordCtx").value = this.prefs.chordContext ?? "free";
+      // Chords on their own have no key.
+      keySel.closest("label")!.hidden = this.chordFree;
+      this.$("ecTonality").closest("label")!.hidden = this.chordFree;
+      this.$("ecKey").hidden = this.chordFree;
       soundSel.value = this.prefs.sound;
       this.$<HTMLInputElement>("ecSelf").checked = this.prefs.selfRate;
       this.$<HTMLInputElement>("ecAuto").checked = this.prefs.autoNext;
@@ -549,6 +567,7 @@ export class EchoTrainer {
       this.lv.fixedLevel = levelSel.value === "auto" ? null : +levelSel.value;
       this.prefs.minor = this.$<HTMLSelectElement>("ecTonality").value === "minor";
       this.prefs.ref = this.$<HTMLSelectElement>("ecRef").value as EchoPrefs["ref"];
+      this.prefs.chordContext = this.$<HTMLSelectElement>("ecChordCtx").value as ChordContext;
       const help = this.$<HTMLSelectElement>("ecHelp").value as Help;
       if (help !== this.help) {
         this.prefs.help = help;
@@ -571,6 +590,8 @@ export class EchoTrainer {
       this.prefs.wobble = +this.$<HTMLSelectElement>("ecWobble").value;
       this.prefs.slide = +this.$<HTMLSelectElement>("ecSlide").value;
       this.save();
+      // The key settings show or hide with the chords' context.
+      showPrefs();
       this.showLevel();
       this.paintMap();
       // A new key or voice needs the key played again.
@@ -579,6 +600,8 @@ export class EchoTrainer {
     keySel.addEventListener("change", onChange(true));
     voiceSel.addEventListener("change", onChange(true));
     this.$("ecTonality").addEventListener("change", onChange(true));
+    this.$("ecChordCtx").addEventListener("change", onChange(true));
+    this.$("ecHearAgain").addEventListener("click", () => this.hearAgain());
     // A new kind of help is a new session (History shows the help used).
     this.$("ecHelp").addEventListener("change", onChange(true));
     this.$("ecHintBtn").addEventListener("click", () => this.giveHint());
@@ -604,6 +627,7 @@ export class EchoTrainer {
         this.streak = 0;
         this.degs = [];
         this.targets = [];
+        this.chord = null;
         this.save();
         fillLevels();
         showPrefs();
@@ -699,6 +723,15 @@ export class EchoTrainer {
     return this.mode;
   }
 
+  /** Chords mode with chords on their own (no key). */
+  private get chordFree(): boolean {
+    return this.mode === "chords" && (this.prefs.chordContext ?? "free") === "free";
+  }
+
+  private get voiceRange(): { low: number; high: number; label: string } {
+    return VOICES.find((v) => v.id === this.prefs.voice)!;
+  }
+
   private get help(): Help {
     return this.prefs.help ?? "learn";
   }
@@ -709,6 +742,7 @@ export class EchoTrainer {
 
   /** The current mode's staircase. */
   private get lv(): LevelState {
+    if (this.mode === "chords") return (this.prefs.chords ??= { fixedLevel: null, level: 0 });
     return this.mode === "syllables" ? (this.prefs.syl ??= { fixedLevel: null, level: 0 }) : this.prefs;
   }
 
@@ -717,10 +751,11 @@ export class EchoTrainer {
   }
 
   private get levelCount(): number {
-    return this.mode === "syllables" ? SYL_LEVELS.length : LEVELS.length;
+    return this.mode === "chords" ? CHORD_LEVELS.length : this.mode === "syllables" ? SYL_LEVELS.length : LEVELS.length;
   }
 
   private describe(i: number): string {
+    if (this.mode === "chords") return describeChordLevel(i);
     return this.mode === "syllables" ? describeSylLevel(i) : describeLevel(i, this.shift);
   }
 
@@ -803,8 +838,12 @@ export class EchoTrainer {
     this.tonic = this.doMidi();
     this.$("ecStart").textContent = "Stop";
     this.$("ecContext").textContent =
-      `${this.keyName()} · ${VOICES.find((v) => v.id === this.prefs.voice)!.label}` + (this.mode === "syllables" ? ` · ${HELP_LABEL[this.help]}` : "");
-    // The key once, then a silence, then the first round.
+      `${this.chordFree ? "On their own" : this.keyName()} · ${this.voiceRange.label}` + (this.mode === "syllables" ? ` · ${HELP_LABEL[this.help]}` : "");
+    // The key once, then a silence, then the first round (chords on their own have no key).
+    if (this.chordFree) {
+      this.later(0.5, () => this.round());
+      return;
+    }
     const end = this.playKey();
     this.later(end + 1.2, () => this.round());
   }
@@ -838,7 +877,14 @@ export class EchoTrainer {
   /** Plays a phrase and listens for the answer: a new phrase, or the same one again (`repeat`). */
   private round(repeat = false): void {
     if (repeat) this.attempt++;
-    else {
+    else if (this.mode === "chords") {
+      this.attempt = 0;
+      const setup = { context: this.prefs.chordContext ?? "free", ...this.voiceRange, key: this.prefs.key, minor: this.minor };
+      let r = chordRound(this.level, setup);
+      for (let i = 0; this.chord && r.notes.join() === this.chord.notes.join() && i < 10; i++) r = chordRound(this.level, setup);
+      this.chord = r;
+      this.targets = r.targets;
+    } else {
       this.attempt = 0;
       const make = () => (this.mode === "syllables" ? sylPhraseFor(this.level, this.minor) : phraseFor(this.level).map((d) => d + this.shift));
       let degs = make();
@@ -853,8 +899,9 @@ export class EchoTrainer {
     this.setPhase("listen");
     const end = this.playPhrase();
     this.later(end, () => {
+      this.awaiting = true;
       this.setPhase("hold");
-      this.later(LEVELS[this.level].gap, () => this.beginAnswer());
+      this.later(this.gap, () => this.beginAnswer());
     });
   }
 
@@ -932,8 +979,38 @@ export class EchoTrainer {
     this.later(at + dur, () => card()?.classList.remove("on"));
   }
 
+  /** Silence between hearing the phrase or chord and singing. */
+  private get gap(): number {
+    return this.mode === "chords" ? CHORD_LEVELS[this.level].gap : LEVELS[this.level].gap;
+  }
+
+  /** Chords: plays the chord (all notes at once), then with `spread` its notes one after another. */
+  private playChord(spread = false): number {
+    this.stopSound?.();
+    const notes = this.chord!.notes;
+    const plan = [{ midi: notes, start: 0, dur: 1.5 }];
+    if (spread) notes.forEach((m, i) => plan.push({ midi: [m], start: 2 + i * NOTE_SEC, dur: i === notes.length - 1 ? LAST_SEC : NOTE_SEC }));
+    const p = this.host.play(plan, this.prefs.sound);
+    this.stopSound = p.stop;
+    return p.end - this.host.ctxTime();
+  }
+
+  /**
+   * Chords: the chord once more. While holding, the silence starts again after it; while singing,
+   * the answer so far is dropped and starts again after it (so the piano isn't judged as the answer).
+   */
+  private hearAgain(): void {
+    if (this.mode !== "chords" || !this.chord || !this.awaiting || (this.phase !== "hold" && this.phase !== "sing")) return;
+    this.clearTimers();
+    this.frames = [];
+    this.setPhase("hold");
+    const end = this.playChord();
+    this.later(end + this.gap, () => this.beginAnswer());
+  }
+
   /** Plays the current phrase; returns its length in seconds. */
   private playPhrase(highlight = false): number {
+    if (this.mode === "chords") return this.playChord();
     this.stopSound?.();
     const n = this.targets.length;
     // playNotes starts 80 ms from now.
@@ -958,7 +1035,9 @@ export class EchoTrainer {
 
   private finishAnswer(): void {
     if (this.phase !== "sing") return;
-    this.result = judgeAnswer(this.frames, this.targets, this.host.settings());
+    // Chords count octaves: the order and the bottom and top notes depend on them.
+    const settings = this.mode === "chords" ? { ...this.host.settings(), octaveFree: false } : this.host.settings();
+    this.result = judgeAnswer(this.frames, this.targets, settings);
     if (this.prefs.selfRate) this.setPhase("rate");
     else this.reveal();
   }
@@ -1030,7 +1109,7 @@ export class EchoTrainer {
     }
     // Hear the phrase again to compare, then carry on.
     this.later(0.5, () => {
-      const len = this.playPhrase();
+      const len = this.mode === "chords" ? this.playChord(true) : this.playPhrase();
       if (this.prefs.autoNext) this.scheduleAuto(len + 2);
     });
   }
@@ -1116,13 +1195,15 @@ export class EchoTrainer {
       listen: "Listen",
       hold: "Hold it in your mind…",
       read: this.help === "learn" ? "Listen and read" : "Read it",
-      sing: this.mode === "syllables" ? "Sing it" : "Sing it back",
+      sing: this.mode === "chords" ? (this.chord?.prompt ?? "Sing it back") : this.mode === "syllables" ? "Sing it" : "Sing it back",
       rate: "How was it?",
       result: "",
     };
     const hint: Record<Phase, string> = {
       idle:
-        this.mode === "syllables"
+        this.mode === "chords"
+          ? `You'll hear ${this.chordFree ? "" : "the key, then "}a chord (or two notes at once). It stops; keep it in mind, then sing its notes as asked.`
+          : this.mode === "syllables"
           ? "You'll hear the key, then see a few solfège syllables with their hand signs. Hear them in your head, then sing them, in your own time."
           : "You'll hear the key, then a short phrase. Keep it in mind through the silence, then sing it back, in your own time.",
       key: "",
@@ -1142,6 +1223,9 @@ export class EchoTrainer {
     this.$("ecResult").hidden = p !== "result";
     this.$("ecDone").hidden = p !== "sing";
     this.$("ecMeterWrap").hidden = p !== "sing";
+    // Only in this round's own wait and answer (not in the pause before the next round).
+    if (p !== "hold" && p !== "sing") this.awaiting = false;
+    this.$("ecHearAgain").hidden = !(this.mode === "chords" && this.awaiting && (p === "hold" || p === "sing"));
     const syl = this.mode === "syllables";
     this.$("ecDots").innerHTML = !syl && ["listen", "hold", "sing"].includes(p) ? this.targets.map(() => "<span></span>").join("") : "";
     const cards = this.$("ecSyl");
@@ -1229,8 +1313,8 @@ export class EchoTrainer {
                 : "";
         const flagged = n.status === "good" && (isWobbly(n, wobble) || slidHere);
         return (
-          `<li style="--c:${statusColor(flagged ? "close" : n.status)}"><b>${degreeSyl(this.degs[i])}</b>` +
-          `<span>${midiName(n.target)}</span><span class="echo-sung">${sung}</span>${land}${steady}</li>`
+          `<li style="--c:${statusColor(flagged ? "close" : n.status)}"><b>${this.rowLabel(i)}</b>` +
+          `<span>${this.rowNote(i, n.target)}</span><span class="echo-sung">${sung}</span>${land}${steady}</li>`
         );
       })
       .join("");
@@ -1246,8 +1330,27 @@ export class EchoTrainer {
       if (next && this.recent.length >= SUGGEST_OF && ok >= SUGGEST_RIGHT)
         help += `<p class="echo-agree good">${ok} of the last ${this.recent.length} right with ${HELP_LABEL[this.help]}. Ready for less help? <button class="btn ghost small" data-help="${next}">Switch to ${HELP_LABEL[next]}</button></p>`;
     }
-    this.$("ecResultBody").innerHTML = `<h3>${head}</h3>${tries}${rated}${help}<ol class="echo-notes">${rows}</ol>`;
+    const c = this.mode === "chords" ? this.chord : null;
+    const chordLine = c
+      ? `<p class="echo-chord"><b>${c.name}</b> · ${c.noteNames.join(" – ")}${c.step && c.syllables ? ` · ${c.step} · ${c.syllables.join(" – ")}` : ""}</p>`
+      : "";
+    this.$("ecResultBody").innerHTML = `<h3>${head}</h3>${chordLine}${tries}${rated}${help}<ol class="echo-notes">${rows}</ol>`;
     this.paintAnswer();
+  }
+
+  /** The note of result row `i`: in Chords spelled as in the chord's name (G♯, not A♭). */
+  private rowNote(i: number, midi: number): string {
+    const c = this.mode === "chords" ? this.chord : null;
+    const k = c ? c.notes.indexOf(this.targets[i]) : -1;
+    return c && k >= 0 ? spelledName(c.noteNames[k], midi) : midiName(midi);
+  }
+
+  /** The label of result row `i`: its syllable (in Chords, only in a key). */
+  private rowLabel(i: number): string {
+    if (this.mode !== "chords") return degreeSyl(this.degs[i]);
+    const c = this.chord!;
+    const k = c.notes.indexOf(this.targets[i]);
+    return c.syllables && k >= 0 ? c.syllables[k] : "";
   }
 
   /**
@@ -1267,6 +1370,7 @@ export class EchoTrainer {
 
   /** Pitches shown on the note map: the current voice's range of phrase notes, with a margin. */
   private mapRange(): [number, number] {
+    if (this.mode === "chords") return [this.voiceRange.low - 1, this.voiceRange.high + 1];
     const doMidi = this.doMidi();
     const [lo, hi] = this.degRange;
     return [doMidi + degreeSemis(lo) - 1, doMidi + degreeSemis(hi) + 1];

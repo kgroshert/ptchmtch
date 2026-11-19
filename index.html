@@ -222,6 +222,7 @@
         <div class="seg" id="ecMode" role="group" aria-label="Mode">
           <button data-mode="echo" title="Hear a phrase, sing it back">Echo</button>
           <button data-mode="syllables" title="Read solfège syllables and sing them, without hearing them first">Syllables</button>
+          <button data-mode="chords" title="Hear a chord, sing its notes">Chords</button>
         </div>
         <button id="ecKey" class="btn ghost" title="Play the key again">Play key</button>
         <button id="ecStart" class="btn primary" title="Start or stop (Enter)">Start</button>
@@ -232,6 +233,13 @@
           <select id="ecTonality">
             <option value="major">major</option>
             <option value="minor">minor (la-based)</option>
+          </select>
+        </label>
+        <label id="ecChordCtxWrap" title="On their own: any chord at any pitch. In a key: the key first, then chords from it.">
+          Chords
+          <select id="ecChordCtx">
+            <option value="free">on their own</option>
+            <option value="key">in a key</option>
           </select>
         </label>
         <label>Voice <select id="ecVoice"></select></label>
@@ -300,6 +308,7 @@
           <button id="ecHintBtn" class="btn ghost" title="Play the first note, then the whole phrase (H)" hidden>Hint: first note</button>
           <button id="ecReady" class="btn" title="Start singing (Enter)" hidden>Sing now</button>
         </div>
+        <button id="ecHearAgain" class="btn ghost" title="Hear the chord again; singing starts over after it" hidden>Hear again</button>
         <button id="ecDone" class="btn">Done</button>
         <div id="ecRate" class="echo-rate">
           <button class="btn" data-rate="flat">Flat</button>
@@ -386,6 +395,7 @@
           <button data-tab="notes">Long notes</button>
           <button data-tab="echo">Echo</button>
           <button data-tab="syllables">Syllables</button>
+          <button data-tab="chords">Chords</button>
           <button data-tab="messa">Messa di voce</button>
           <button data-tab="glide">Glides</button>
         </div>

@@ -10,7 +10,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "sample": "node scripts/make-sample.mjs",
-    "check": "tsx scripts/check-messa.ts && tsx scripts/check-glide.ts"
+    "check": "tsx scripts/check-messa.ts && tsx scripts/check-glide.ts && tsx scripts/check-chords.ts"
   },
   "dependencies": {
     "opensheetmusicdisplay": "^2.2.1",

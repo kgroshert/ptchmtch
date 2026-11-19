@@ -30,6 +30,8 @@ import {
   ECHO_VIEW,
   SYL_KEY,
   SYL_VIEW,
+  CHORD_KEY,
+  CHORD_VIEW,
   MESSA_KEY,
   MESSA_VIEW,
   GLIDE_KEY,
@@ -877,7 +879,7 @@ function hideToast(): void {
   $("toast").hidden = true;
 }
 
-type HistoryTab = "runs" | "loops" | "notes" | "echo" | "syllables" | "messa" | "glide";
+type HistoryTab = "runs" | "loops" | "notes" | "echo" | "syllables" | "chords" | "messa" | "glide";
 let historyTab: HistoryTab = "runs";
 
 function openHistory(): void {
@@ -885,9 +887,9 @@ function openHistory(): void {
   // Open on what you're doing: the trainer's mode on the Audiation page, the score's history on
   // the Score page. (Only when opening; the tabs then switch freely.)
   if (!$<HTMLDialogElement>("history").open) {
-    if (page === "audiation") historyTab = echo.currentMode === "syllables" ? "syllables" : "echo";
+    if (page === "audiation") historyTab = echo.currentMode === "syllables" ? "syllables" : echo.currentMode === "chords" ? "chords" : "echo";
     else if (page === "support") historyTab = support.exercise === "glide" ? "glide" : "messa";
-    else if (historyTab === "echo" || historyTab === "syllables" || historyTab === "messa" || historyTab === "glide") historyTab = "runs";
+    else if (historyTab === "echo" || historyTab === "syllables" || historyTab === "chords" || historyTab === "messa" || historyTab === "glide") historyTab = "runs";
   }
   const dlg = $<HTMLDialogElement>("history");
   for (const b of $("historyTabs").querySelectorAll<HTMLButtonElement>("button"))
@@ -908,6 +910,9 @@ function openHistory(): void {
   } else if (historyTab === "syllables") {
     $("historyFor").textContent = "All Syllables sessions: solfège read and sung, without hearing it first.";
     renderView<EchoSession>(body, SYL_KEY, SYL_VIEW);
+  } else if (historyTab === "chords") {
+    $("historyFor").textContent = "All Chords sessions: chords heard, then their notes sung from memory.";
+    renderView<EchoSession>(body, CHORD_KEY, CHORD_VIEW);
   } else if (!loaded || !track) {
     $("historyFor").textContent = "Open a score first.";
     body.innerHTML = "";
@@ -922,6 +927,7 @@ function openHistory(): void {
     notes: "A session is recorded for each note you practise in the trainer for at least 2 seconds of singing. Vibrato is measured on the longest uninterrupted stretch.",
     messa: "A session is recorded when you stop, change the note or length, or leave the page, if you sang at least one swell. Range: the loudest point above the softer of the two soft ends. Evenness: how far the volume strayed from a steady rise and fall. Volume is relative to the microphone, so compare sessions sung at the same distance.",
     glide: "A session is recorded when you stop, switch exercise, change the voice, glide or interval, or leave the page, if you sang at least one glide up and back down. Evenness: how far the pitch strayed from a straight, even glide between where you started, turned and landed, in cents. Speed isn't judged: the pace is yours. Volume steadiness: how much the volume varied around its own level.",
+    chords: "A session is recorded as for Echo, in the Chords mode, whether the chords came on their own or in a key (shown with each session). Only the first try of each chord counts. Octaves count here: a note sung an octave off is wrong, even with Ignore octave on.",
     syllables: "A session is recorded as for Echo, in the Syllables mode. Levels follow the Kodály order of tone sets (sol mi, then la, do, re, low la and sol, fa, ti), so they aren't the same as Echo's.",
     echo: "A session is recorded when you stop the Echo trainer, close it, change key or voice, or leave the page, if you sang at least one round. Only the first try of each phrase counts. Right: every note within 50 cents; in tune: every note within your tolerance.",
   }[historyTab];
@@ -958,7 +964,7 @@ const echo = new EchoTrainer($("echo"), {
   settings,
 });
 
-echo.onSession = (s, mode) => addRow(mode === "syllables" ? SYL_KEY : ECHO_KEY, s);
+echo.onSession = (s, mode) => addRow(mode === "syllables" ? SYL_KEY : mode === "chords" ? CHORD_KEY : ECHO_KEY, s);
 
 const support = new SupportTrainer($("support"), {
   ctxTime: () => getPlayer().ctx.currentTime,

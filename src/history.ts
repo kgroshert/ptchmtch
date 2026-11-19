@@ -113,6 +113,7 @@ export const loopsKey = (song: string, track: string) => `ptchmtch.loops.${song}
 export const TRAINER_KEY = "ptchmtch.trainer";
 export const ECHO_KEY = "ptchmtch.echo.sessions";
 export const SYL_KEY = "ptchmtch.syllables.sessions";
+export const CHORD_KEY = "ptchmtch.chords.sessions";
 export const MESSA_KEY = "ptchmtch.messa.sessions";
 
 /** A glide session on the Support page (only glides that went up and came back down count). */
@@ -313,6 +314,12 @@ export const SYL_VIEW: View<EchoSession> = {
   ...ECHO_VIEW,
   empty: "No Syllables sessions yet. Open Audiation, switch to Syllables and sing a few rounds.",
   metrics: ECHO_VIEW.metrics.map((m) => (m.label === "Highest level" ? { ...m, range: [1, 9] as [number, number] } : m)),
+};
+
+export const CHORD_VIEW: View<EchoSession> = {
+  ...ECHO_VIEW,
+  empty: "No Chords sessions yet. Open Audiation, switch to Chords and sing a few rounds.",
+  metrics: ECHO_VIEW.metrics.map((m) => (m.label === "Highest level" ? { ...m, range: [1, 6] as [number, number] } : m)),
 };
 
 export const MESSA_VIEW: View<MessaSession> = {
